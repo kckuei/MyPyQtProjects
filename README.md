@@ -72,4 +72,4 @@ pip install -r requirements.txt
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/kckuei/MyPyQtProjects/blob/main/LICENSE.txt) file for details.
