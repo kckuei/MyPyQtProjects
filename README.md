@@ -8,9 +8,7 @@ Tool for [fitting and interpolating data](https://github.com/kckuei/MyPyQtProjec
 
 ![Smoothing spline](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/example-1-spline.png?raw=true)
 
-![Linear interpolation](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/example-2-linearinterp.png?raw=true)
-
-![Step interpolation](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/example-3-step.png?raw=true)
+![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/peek_demo.gif?raw=true)
 
 Dependencies
 * `PySide6 6.7.1` for the GUI components
