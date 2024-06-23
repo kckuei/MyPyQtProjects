@@ -1,3 +1,7 @@
+// Copyright (c) 2024 Kevin Kuei
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 '''
 First PyQt Program: Simple Data Fit & Interpolator Program
 2024-06-22 KCK

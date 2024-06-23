@@ -1,5 +1,6 @@
 # MyPyQtProjects
 
+Miscellaneous small PyQt projects to make life easier.
 
 ## Project 0: Simple DataFit and Interpolation Tool
 
@@ -12,13 +13,26 @@ Tool for [fitting and interpolating data](https://github.com/kckuei/MyPyQtProjec
 ![Step interpolation](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/example-3-step.png?raw=true)
 
 Dependencies
-* `PySide6` for the GUI components
-* `matplotlib` for plotting
-* `numpy` for numerical operations
-* `pandas` for data handling
-* `scipy` for interpolation methods
+* `PySide6 6.7.1` for the GUI components
+* `matplotlib 3.9.0` for plotting
+* `numpy 1.26.4` for numerical operations
+* `pandas 2.2.2` for data handling
+* `scipy 1.13.1` for interpolation methods
 
-### Create Executables
+## Project 1: Discount/Knockoff BlueBeam Revu Tool
+
+## Project 2: Bezier Curves Digitizer/Interpolator Tool
+
+## Project 3: CPT/SPT Data Processing & Site Characterization Tool
+
+## Project 4: Triaxial Data Strength Enevelopes Tool
+
+
+## Other Notes
+
+### Compiling Executables
+
+Tested with `Pyinstaller 6.8.0`
 
 Install PyInstaller:
 Open your terminal or command prompt and run:
@@ -41,3 +55,21 @@ Replace your_script_name.py with the name of your Python script.
 
 Find the Executable:
 After the process completes, you will find the executable in the dist folder within your project directory.
+
+### Dependencies
+
+Saving the package list:
+
+```bash
+pip freeze > requirements.txt
+```
+
+Recreating environment:
+
+```bash
+pip install -r requirements.txt
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
