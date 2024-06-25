@@ -131,16 +131,21 @@ class ImageViewer(QMainWindow):
     def handlePolygonPoint(self, point):
         if len(self.current_polygon) > 0 and self.calculateDistance(point, self.current_polygon[0]) < 10:
             # Close the polygon if the point is close to the first point
-            self.calculateArea()
+            self.calculateAndStoreArea(self.current_polygon)
             self.current_polygon = []
         else:
             self.current_polygon.append(point)
             self.markPoint(point)
 
-    def calculateArea(self):
-        if len(self.current_polygon) < 3:
+    def calculateAndStoreArea(self, polygon_points):
+        if len(polygon_points) < 3:
             return  # Not a polygon
-        polygon = QPolygonF(self.current_polygon)
+        polygon = QPolygonF(polygon_points)
+        area = self.calculatePolygonArea(polygon)
+        self.areas.append((polygon, area))
+        self.updateView()
+
+    def calculatePolygonArea(self, polygon):
         area = 0.0
         for i in range(len(polygon)):
             p1 = polygon[i]
@@ -148,8 +153,7 @@ class ImageViewer(QMainWindow):
             area += p1.x() * p2.y() - p2.x() * p1.y()
         area = abs(area) / 2.0
         area *= (self.scale_factor ** 2)  # Convert to real world units
-        self.areas.append((polygon, area))
-        self.updateView()
+        return area
 
     def promptScaleInput(self):
         distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
@@ -166,6 +170,11 @@ class ImageViewer(QMainWindow):
             pixel_distance = self.calculateDistance(p1, p2)
             real_distance = pixel_distance * self.scale_factor
             self.measurements[i] = (p1, p2, real_distance)
+
+        for i, (polygon, _) in enumerate(self.areas):
+            real_area = self.calculatePolygonArea(polygon)
+            self.areas[i] = (polygon, real_area)
+
         self.updateView()
 
     def markPoint(self, point):
@@ -289,7 +298,10 @@ class ImageViewer(QMainWindow):
 
             # Redraw areas
             for polygon, area in self.areas:
-                painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
+                if self.delete_mode and polygon == self.delete_candidate:
+                    painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                else:
+                    painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
                 painter.drawPolygon(polygon)
                 mid_point = polygon.boundingRect().center()
                 painter.setFont(QFont("Arial", 14))
@@ -306,7 +318,6 @@ class ImageViewer(QMainWindow):
         painter.end()
         self.image = temp_image
         self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
