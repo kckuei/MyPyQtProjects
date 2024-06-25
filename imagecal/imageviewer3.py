@@ -2,8 +2,8 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
                                QHBoxLayout, QFileDialog, QInputDialog)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
+from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
 import math
 
 class ImageViewer(QMainWindow):
@@ -14,7 +14,10 @@ class ImageViewer(QMainWindow):
         self.calibration_points = []  # Stores calibration points
         self.measurement_points = []  # Stores measurement points
         self.measurements = []  # Stores lines and distances
+        self.areas = []  # Stores polygons and their areas
+        self.current_polygon = []  # Stores points for the current polygon
         self.delete_mode = False
+        self.measure_area_mode = False
         self.annotations_visible = True
         self.pen = QPen(Qt.red, 10, Qt.SolidLine)  # Initialize the pen attribute here
         self.clean_image = None  # This will hold the clean copy of the image
@@ -56,6 +59,11 @@ class ImageViewer(QMainWindow):
         measureButton.clicked.connect(self.measureDistance)
         buttons_layout.addWidget(measureButton)
 
+        # Measure area button
+        areaButton = QPushButton("Measure Area", self)
+        areaButton.clicked.connect(self.measureArea)
+        buttons_layout.addWidget(areaButton)
+
         # Clear annotations button
         clearButton = QPushButton("Clear Annotations", self)
         clearButton.clicked.connect(self.clearAnnotations)
@@ -84,37 +92,29 @@ class ImageViewer(QMainWindow):
             self.measurements.clear()
             self.calibration_points.clear()
             self.measurement_points.clear()
+            self.areas.clear()
+            self.current_polygon.clear()
             self.annotations_visible = True
             self.updateView()
 
     def eventFilter(self, source, event):
-        # if source is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
-        #     if event.button() == Qt.LeftButton:
-        #         self.lastPoint = self.view.mapToScene(event.position().toPoint())
-        #         if self.delete_mode:
-        #             self.handleDeleteAnnotation(self.lastPoint)
-        #         else:
-        #             self.handleMousePress(self.lastPoint)
-        # return super().eventFilter(source, event)
         if source is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
             if event.button() == Qt.LeftButton:
                 self.lastPoint = self.view.mapToScene(event.position().toPoint())
                 if self.pointInImage(self.lastPoint):
                     if self.delete_mode:
                         self.handleDeleteAnnotation(self.lastPoint)
+                    elif self.measure_area_mode:
+                        self.handlePolygonPoint(self.lastPoint)
                     else:
                         self.handleMousePress(self.lastPoint)
         elif source is self.view.viewport() and event.type() == QEvent.MouseMove and self.delete_mode:
             self.lastPoint = self.view.mapToScene(event.position().toPoint())
             self.highlightDeleteCandidate(self.lastPoint)
-
-        # let event continue propogation through default event system
         return super().eventFilter(source, event)
-
 
     def pointInImage(self, point):
         return (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
-
 
     def handleMousePress(self, point):
         if len(self.calibration_points) < 2:  # Calibration points
@@ -128,6 +128,29 @@ class ImageViewer(QMainWindow):
             if len(self.measurement_points) % 2 == 0:
                 self.drawMeasurementLine()
 
+    def handlePolygonPoint(self, point):
+        if len(self.current_polygon) > 0 and self.calculateDistance(point, self.current_polygon[0]) < 10:
+            # Close the polygon if the point is close to the first point
+            self.calculateArea()
+            self.current_polygon = []
+        else:
+            self.current_polygon.append(point)
+            self.markPoint(point)
+
+    def calculateArea(self):
+        if len(self.current_polygon) < 3:
+            return  # Not a polygon
+        polygon = QPolygonF(self.current_polygon)
+        area = 0.0
+        for i in range(len(polygon)):
+            p1 = polygon[i]
+            p2 = polygon[(i + 1) % len(polygon)]
+            area += p1.x() * p2.y() - p2.x() * p1.y()
+        area = abs(area) / 2.0
+        area *= (self.scale_factor ** 2)  # Convert to real world units
+        self.areas.append((polygon, area))
+        self.updateView()
+
     def promptScaleInput(self):
         distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
         if ok:
@@ -137,7 +160,6 @@ class ImageViewer(QMainWindow):
 
     def calculateDistance(self, point1, point2):
         return math.sqrt((point1.x() - point2.x())**2 + (point1.y() - point2.y())**2)
-
 
     def updateMeasurements(self):
         for i, (p1, p2, _) in enumerate(self.measurements):
@@ -158,22 +180,29 @@ class ImageViewer(QMainWindow):
         self.updateView()
 
     def calibrateScale(self):
+        self.delete_mode = False
+        self.measure_area_mode = False
         self.calibration_points.clear()
-        # self.measurement_points.clear()
-        # self.measurements.clear()
         self.updateView()
 
     def measureDistance(self):
         self.delete_mode = False
+        self.measure_area_mode = False
         if len(self.calibration_points) < 2:
             # Ensure we only keep calibration points if calibration is not completed
             self.measurement_points.clear()
         self.updateView()
 
+    def measureArea(self):
+        self.delete_mode = False
+        self.measure_area_mode = not self.measure_area_mode
+        self.current_polygon = []
+        self.updateView()
+
     def clearAnnotations(self):
-        #self.calibration_points.clear()
         self.measurement_points.clear()
         self.measurements.clear()
+        self.areas.clear()
         self.updateView()
 
     def toggleAnnotations(self):
@@ -182,50 +211,27 @@ class ImageViewer(QMainWindow):
 
     def deleteAnnotation(self):
         self.delete_mode = not self.delete_mode
-        self.delete_candidate = None # Reset the delete candidate 
+        self.measure_area_mode = False
+        self.delete_candidate = None  # Reset the delete candidate 
         self.updateView()
 
-
     def handleDeleteAnnotation(self, point):
-        # def pointToLineDistance(p, p1, p2):
-        #     """Calculate the perpendicular distance from point p to the line segment p1-p2."""
-        #     if p1 == p2:
-        #         return math.hypot(p.x() - p1.x(), p.y() - p1.y())
-        #     else:
-        #         n = abs((p2.y() - p1.y()) * p.x() - (p2.x() - p1.x()) * p.y() + p2.x() * p1.y() - p2.y() * p1.x())
-        #         d = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-        #         return n / d
-
-        # threshold = 5.0  # Adjust the threshold as needed
-        # for i, (p1, p2, distance) in enumerate(self.measurements):
-        #     if pointToLineDistance(point, p1, p2) <= threshold:
-        #         del self.measurements[i]
-        #         # Remove associated points
-        #         if p1 in self.measurement_points:
-        #             self.measurement_points.remove(p1)
-        #         if p2 in self.measurement_points:
-        #             self.measurement_points.remove(p2)
-        #         self.updateView()
-        #         break
         if self.delete_candidate:
-            self.measurements.remove(self.delete_candidate)
-            p1, p2, _ = self.delete_candidate
-            if p1 in self.measurement_points:
-                self.measurement_points.remove(p1)
-            if p2 in self.measurement_points:
-                self.measurement_points.remove(p2)
+            if isinstance(self.delete_candidate, tuple) and len(self.delete_candidate) == 3:
+                self.measurements.remove(self.delete_candidate)
+                p1, p2, _ = self.delete_candidate
+                if p1 in self.measurement_points:
+                    self.measurement_points.remove(p1)
+                if p2 in self.measurement_points:
+                    self.measurement_points.remove(p2)
+            elif isinstance(self.delete_candidate, QPolygonF):
+                self.areas = [area for area in self.areas if area[0] != self.delete_candidate]
             self.delete_candidate = None
             self.updateView()
 
     def highlightDeleteCandidate(self, point):
         def pointToLineDistance(p, p1, p2):
             """Calculate the perpendicular distance from point p to the line segment p1-p2."""
-            # if p1 == p2:
-            #     return math.hypot(p.x() - p1.x(), p.y() - p1.y())
-            # else:
-            #     n = abs((p2.y() - p1.y()) * p.x() - (p2.x() - p1.x()) * p.y() + p2.x() * p1.y() - p2.y() * p1.x())
-            #     d = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-            #     return n / d
             line_mag = math.sqrt((p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
             if line_mag < 0.000001:
                 return math.hypot(p.x() - p1.x(), p.y() - p1.y())
@@ -238,7 +244,6 @@ class ImageViewer(QMainWindow):
 
             return dist
 
-
         threshold = 5.0  # Adjust the threshold as needed
         for p1, p2, distance in self.measurements:
             if pointToLineDistance(point, p1, p2) <= threshold:
@@ -246,27 +251,30 @@ class ImageViewer(QMainWindow):
                 self.updateView()
                 return
 
+        for polygon, area in self.areas:
+            if polygon.containsPoint(point, Qt.OddEvenFill):
+                self.delete_candidate = polygon
+                self.updateView()
+                return
+
         self.delete_candidate = None
         self.updateView()
-
 
     def updateView(self):
         temp_image = self.clean_image.copy()  # Start with a clean copy of the original image
         painter = QPainter(temp_image)
-        
+
         if self.annotations_visible:
             # Redraw calibration points
             painter.setPen(QPen(Qt.green, 3, Qt.SolidLine))
             for point in self.calibration_points:
-                # painter.drawPoint(point)
                 painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
-            
 
             # Redraw measurement points
             painter.setPen(QPen(Qt.red, 10, Qt.SolidLine))
             for point in self.measurement_points:
                 painter.drawPoint(point)
-            
+
             # Redraw measurement lines
             for p1, p2, distance in self.measurements:
                 if self.delete_mode and (p1, p2, distance) == self.delete_candidate:
@@ -278,10 +286,27 @@ class ImageViewer(QMainWindow):
                 painter.setFont(QFont("Arial", 14))
                 painter.setPen(QPen(Qt.red))
                 painter.drawText(mid_point, f"{distance:.2f}")
-        
+
+            # Redraw areas
+            for polygon, area in self.areas:
+                painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
+                painter.drawPolygon(polygon)
+                mid_point = polygon.boundingRect().center()
+                painter.setFont(QFont("Arial", 14))
+                painter.setPen(QPen(Qt.red))
+                painter.drawText(mid_point, f"{area:.2f}")
+
+            # Draw current polygon in progress
+            if self.measure_area_mode and len(self.current_polygon) > 0:
+                painter.setPen(QPen(Qt.cyan, 2, Qt.SolidLine))
+                for i in range(len(self.current_polygon) - 1):
+                    painter.drawLine(self.current_polygon[i], self.current_polygon[i + 1])
+                painter.drawLine(self.current_polygon[-1], self.lastPoint)
+
         painter.end()
         self.image = temp_image
         self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
