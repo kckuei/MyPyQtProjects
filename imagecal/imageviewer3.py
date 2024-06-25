@@ -1,9 +1,9 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
-                               QHBoxLayout, QFileDialog, QInputDialog)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
-from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
+                               QHBoxLayout, QFileDialog, QInputDialog, QSlider)
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QWheelEvent
+from PySide6.QtCore import Qt, QEvent, QPointF, QRectF, QSize
 import math
 
 class ImageViewer(QMainWindow):
@@ -22,6 +22,7 @@ class ImageViewer(QMainWindow):
         self.pen = QPen(Qt.red, 10, Qt.SolidLine)  # Initialize the pen attribute here
         self.clean_image = None  # This will hold the clean copy of the image
         self.delete_candidate = None  # To track which line is a candidate for deletion
+        self.zoom_factor = 1.0
 
     def initUI(self):
         self.setWindowTitle("Image Drawer")
@@ -79,6 +80,24 @@ class ImageViewer(QMainWindow):
         deleteButton.clicked.connect(self.deleteAnnotation)
         buttons_layout.addWidget(deleteButton)
 
+        # Zoom in and zoom out buttons
+        zoomInButton = QPushButton("Zoom In", self)
+        zoomInButton.clicked.connect(self.zoomIn)
+        buttons_layout.addWidget(zoomInButton)
+
+        zoomOutButton = QPushButton("Zoom Out", self)
+        zoomOutButton.clicked.connect(self.zoomOut)
+        buttons_layout.addWidget(zoomOutButton)
+
+        # Zoom slider
+        self.zoomSlider = QSlider(Qt.Horizontal)
+        self.zoomSlider.setMinimum(1)
+        self.zoomSlider.setMaximum(200)
+        self.zoomSlider.setValue(100)
+        self.zoomSlider.setTickInterval(10)
+        self.zoomSlider.valueChanged.connect(self.zoomSliderChanged)
+        layout.addWidget(self.zoomSlider)
+
         # Enable mouse tracking
         self.view.setMouseTracking(True)
         self.view.viewport().installEventFilter(self)
@@ -111,6 +130,8 @@ class ImageViewer(QMainWindow):
         elif source is self.view.viewport() and event.type() == QEvent.MouseMove and self.delete_mode:
             self.lastPoint = self.view.mapToScene(event.position().toPoint())
             self.highlightDeleteCandidate(self.lastPoint)
+        elif event.type() == QEvent.Wheel:
+            self.handleWheelEvent(event)
         return super().eventFilter(source, event)
 
     def pointInImage(self, point):
@@ -318,6 +339,21 @@ class ImageViewer(QMainWindow):
         painter.end()
         self.image = temp_image
         self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
+
+    def handleWheelEvent(self, event):
+        zoom_factor = 1.25 if event.angleDelta().y() > 0 else 0.8
+        self.view.scale(zoom_factor, zoom_factor)
+
+    def zoomIn(self):
+        self.view.scale(1.25, 1.25)
+
+    def zoomOut(self):
+        self.view.scale(0.8, 0.8)
+
+    def zoomSliderChanged(self, value):
+        scale_factor = value / 100.0
+        self.view.resetTransform()
+        self.view.scale(scale_factor, scale_factor)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
