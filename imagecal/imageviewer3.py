@@ -2,8 +2,8 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
                                QHBoxLayout, QFileDialog, QInputDialog)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPainterPath
-from PySide6.QtCore import Qt, QPointF, QEvent
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont
+from PySide6.QtCore import Qt, QEvent
 import math
 
 class ImageViewer(QMainWindow):
@@ -11,13 +11,14 @@ class ImageViewer(QMainWindow):
         super().__init__()
         self.initUI()
         self.scale_factor = None
-        self.calibration_points = []
-        self.measurement_points = []
-        self.measurements = []
+        self.calibration_points = []  # Stores calibration points
+        self.measurement_points = []  # Stores measurement points
+        self.measurements = []  # Stores lines and distances
         self.delete_mode = False
         self.annotations_visible = True
         self.pen = QPen(Qt.red, 10, Qt.SolidLine)  # Initialize the pen attribute here
         self.clean_image = None  # This will hold the clean copy of the image
+        self.delete_candidate = None  # To track which line is a candidate for deletion
 
     def initUI(self):
         self.setWindowTitle("Image Drawer")
@@ -81,76 +82,97 @@ class ImageViewer(QMainWindow):
             self.clean_image = self.image.copy()  # Store a clean copy of the image
             self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
             self.measurements.clear()
+            self.calibration_points.clear()
+            self.measurement_points.clear()
             self.annotations_visible = True
             self.updateView()
 
     def eventFilter(self, source, event):
+        # if source is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
+        #     if event.button() == Qt.LeftButton:
+        #         self.lastPoint = self.view.mapToScene(event.position().toPoint())
+        #         if self.delete_mode:
+        #             self.handleDeleteAnnotation(self.lastPoint)
+        #         else:
+        #             self.handleMousePress(self.lastPoint)
+        # return super().eventFilter(source, event)
         if source is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
             if event.button() == Qt.LeftButton:
                 self.lastPoint = self.view.mapToScene(event.position().toPoint())
-                if self.delete_mode:
-                    self.handleDeleteAnnotation(self.lastPoint)
-                else:
-                    self.handleMousePress(self.lastPoint)
+                if self.pointInImage(self.lastPoint):
+                    if self.delete_mode:
+                        self.handleDeleteAnnotation(self.lastPoint)
+                    else:
+                        self.handleMousePress(self.lastPoint)
+        elif source is self.view.viewport() and event.type() == QEvent.MouseMove and self.delete_mode:
+            self.lastPoint = self.view.mapToScene(event.position().toPoint())
+            self.highlightDeleteCandidate(self.lastPoint)
+
+        # let event continue propogation through default event system
         return super().eventFilter(source, event)
 
+
+    def pointInImage(self, point):
+        return (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
+
+
     def handleMousePress(self, point):
-        if len(self.calibration_points) < 2:
+        if len(self.calibration_points) < 2:  # Calibration points
             self.calibration_points.append(point)
             self.markPoint(point)
             if len(self.calibration_points) == 2:
                 self.promptScaleInput()
-        elif len(self.measurement_points) < 2:
+        else:  # Measurement points
             self.measurement_points.append(point)
             self.markPoint(point)
-            if len(self.measurement_points) == 2:
+            if len(self.measurement_points) % 2 == 0:
                 self.drawMeasurementLine()
 
     def promptScaleInput(self):
         distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
         if ok:
-            pixel_distance = self.calculateDistance(self.calibration_points[0], 
-                                                    self.calibration_points[1])
+            pixel_distance = self.calculateDistance(self.calibration_points[0], self.calibration_points[1])
             self.scale_factor = distance / pixel_distance
+            self.updateMeasurements()
 
     def calculateDistance(self, point1, point2):
         return math.sqrt((point1.x() - point2.x())**2 + (point1.y() - point2.y())**2)
 
+
+    def updateMeasurements(self):
+        for i, (p1, p2, _) in enumerate(self.measurements):
+            pixel_distance = self.calculateDistance(p1, p2)
+            real_distance = pixel_distance * self.scale_factor
+            self.measurements[i] = (p1, p2, real_distance)
+        self.updateView()
+
     def markPoint(self, point):
-        painter = QPainter(self.image)
-        painter.setPen(self.pen)
-        painter.drawPoint(point)
-        painter.end()
-        self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
+        self.updateView()
 
     def drawMeasurementLine(self):
-        painter = QPainter(self.image)
-        painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
-        painter.drawLine(self.measurement_points[0], self.measurement_points[1])
-
-        pixel_distance = self.calculateDistance(self.measurement_points[0], 
-                                                self.measurement_points[1])
+        p1 = self.measurement_points[-2]
+        p2 = self.measurement_points[-1]
+        pixel_distance = self.calculateDistance(p1, p2)
         real_distance = pixel_distance * self.scale_factor
-        mid_point = (self.measurement_points[0] + self.measurement_points[1]) / 2
-        painter.setFont(QFont("Arial", 14))
-        painter.setPen(QPen(Qt.red))
-        painter.drawText(mid_point, f"{real_distance:.2f}")
-
-        painter.end()
-        self.measurements.append((self.measurement_points[0], 
-                                  self.measurement_points[1], 
-                                  real_distance))
-        self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
-        self.measurement_points.clear()
+        self.measurements.append((p1, p2, real_distance))
+        self.updateView()
 
     def calibrateScale(self):
         self.calibration_points.clear()
-        self.measurement_points.clear()
+        # self.measurement_points.clear()
+        # self.measurements.clear()
+        self.updateView()
 
     def measureDistance(self):
-        self.measurement_points.clear()
+        self.delete_mode = False
+        if len(self.calibration_points) < 2:
+            # Ensure we only keep calibration points if calibration is not completed
+            self.measurement_points.clear()
+        self.updateView()
 
     def clearAnnotations(self):
+        #self.calibration_points.clear()
+        self.measurement_points.clear()
         self.measurements.clear()
         self.updateView()
 
@@ -160,48 +182,103 @@ class ImageViewer(QMainWindow):
 
     def deleteAnnotation(self):
         self.delete_mode = not self.delete_mode
+        self.delete_candidate = None # Reset the delete candidate 
+        self.updateView()
 
-    # def handleDeleteAnnotation(self, point):
-    #     print("here")
-    #     for i, (p1, p2, distance) in enumerate(self.measurements):
-    #         print(i, p1, p2)
-    #         path = QPainterPath()
-    #         path.moveTo(p1)
-    #         path.lineTo(p2)
-    #         if path.contains(point):
-    #             del self.measurements[i]
-    #             self.updateView()
-    #             break
+
     def handleDeleteAnnotation(self, point):
+        # def pointToLineDistance(p, p1, p2):
+        #     """Calculate the perpendicular distance from point p to the line segment p1-p2."""
+        #     if p1 == p2:
+        #         return math.hypot(p.x() - p1.x(), p.y() - p1.y())
+        #     else:
+        #         n = abs((p2.y() - p1.y()) * p.x() - (p2.x() - p1.x()) * p.y() + p2.x() * p1.y() - p2.y() * p1.x())
+        #         d = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
+        #         return n / d
+
+        # threshold = 5.0  # Adjust the threshold as needed
+        # for i, (p1, p2, distance) in enumerate(self.measurements):
+        #     if pointToLineDistance(point, p1, p2) <= threshold:
+        #         del self.measurements[i]
+        #         # Remove associated points
+        #         if p1 in self.measurement_points:
+        #             self.measurement_points.remove(p1)
+        #         if p2 in self.measurement_points:
+        #             self.measurement_points.remove(p2)
+        #         self.updateView()
+        #         break
+        if self.delete_candidate:
+            self.measurements.remove(self.delete_candidate)
+            p1, p2, _ = self.delete_candidate
+            if p1 in self.measurement_points:
+                self.measurement_points.remove(p1)
+            if p2 in self.measurement_points:
+                self.measurement_points.remove(p2)
+            self.delete_candidate = None
+            self.updateView()
+
+    def highlightDeleteCandidate(self, point):
         def pointToLineDistance(p, p1, p2):
             """Calculate the perpendicular distance from point p to the line segment p1-p2."""
-            if p1 == p2:
+            # if p1 == p2:
+            #     return math.hypot(p.x() - p1.x(), p.y() - p1.y())
+            # else:
+            #     n = abs((p2.y() - p1.y()) * p.x() - (p2.x() - p1.x()) * p.y() + p2.x() * p1.y() - p2.y() * p1.x())
+            #     d = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
+            #     return n / d
+            line_mag = math.sqrt((p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
+            if line_mag < 0.000001:
                 return math.hypot(p.x() - p1.x(), p.y() - p1.y())
-            else:
-                n = abs((p2.y() - p1.y()) * p.x() - (p2.x() - p1.x()) * p.y() + p2.x() * p1.y() - p2.y() * p1.x())
-                d = math.hypot(p2.x() - p1.x(), p2.y() - p1.y())
-                return n / d
+
+            u1 = ((p.x() - p1.x()) * (p2.x() - p1.x()) + (p.y() - p1.y()) * (p2.y() - p1.y())) / (line_mag ** 2)
+            u = max(min(u1, 1.0), 0.0)
+            ix = p1.x() + u * (p2.x() - p1.x())
+            iy = p1.y() + u * (p2.y() - p1.y())
+            dist = math.sqrt((p.x() - ix) ** 2 + (p.y() - iy) ** 2)
+
+            return dist
+
 
         threshold = 5.0  # Adjust the threshold as needed
-        for i, (p1, p2, distance) in enumerate(self.measurements):
+        for p1, p2, distance in self.measurements:
             if pointToLineDistance(point, p1, p2) <= threshold:
-                del self.measurements[i]
+                self.delete_candidate = (p1, p2, distance)
                 self.updateView()
-                break
+                return
 
+        self.delete_candidate = None
+        self.updateView()
 
 
     def updateView(self):
         temp_image = self.clean_image.copy()  # Start with a clean copy of the original image
         painter = QPainter(temp_image)
+        
         if self.annotations_visible:
+            # Redraw calibration points
+            painter.setPen(QPen(Qt.green, 3, Qt.SolidLine))
+            for point in self.calibration_points:
+                # painter.drawPoint(point)
+                painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
+            
+
+            # Redraw measurement points
+            painter.setPen(QPen(Qt.red, 10, Qt.SolidLine))
+            for point in self.measurement_points:
+                painter.drawPoint(point)
+            
+            # Redraw measurement lines
             for p1, p2, distance in self.measurements:
-                painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
+                if self.delete_mode and (p1, p2, distance) == self.delete_candidate:
+                    painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                else:
+                    painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
                 painter.drawLine(p1, p2)
                 mid_point = (p1 + p2) / 2
                 painter.setFont(QFont("Arial", 14))
                 painter.setPen(QPen(Qt.red))
                 painter.drawText(mid_point, f"{distance:.2f}")
+        
         painter.end()
         self.image = temp_image
         self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
