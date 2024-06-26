@@ -2,10 +2,10 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
                                QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
-                               QFormLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem,
-                               QHeaderView)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QTransform
-from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
+                               QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
+                               QHeaderView, QAbstractItemView)
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
+from PySide6.QtCore import Qt, QEvent, QPointF
 import math
 
 class ImageViewer(QMainWindow):
@@ -18,11 +18,13 @@ class ImageViewer(QMainWindow):
         self.areas = []  # Stores polygons and their areas
         self.current_polygon = []  # Stores points for the current polygon
         self.delete_mode = False
+        self.delete_point_mode = False
         self.measure_area_mode = False
         self.annotations_visible = True
         self.pen = QPen(Qt.red, 10, Qt.SolidLine)  # Initialize the pen attribute here
         self.clean_image = None  # This will hold the clean copy of the image
         self.delete_candidate = None  # To track which line is a candidate for deletion
+        self.delete_point_candidate = None  # To track which point is a candidate for deletion
         self.zoom_factor = 1.0
         self.x_axis = None
         self.y_axis = None
@@ -56,7 +58,6 @@ class ImageViewer(QMainWindow):
         
         self.annotation_view.viewport().installEventFilter(self)
         self.digitize_view.viewport().installEventFilter(self)
-
         self.initUI()
 
     def initUI(self):
@@ -139,11 +140,12 @@ class ImageViewer(QMainWindow):
 
     def createDigitizeTab(self):
         tab = QWidget()
-        layout = QVBoxLayout()
+        layout = QHBoxLayout()
 
         # Control buttons layout
+        controls_layout = QVBoxLayout()
         buttons_layout = QHBoxLayout()
-        layout.addLayout(buttons_layout)
+        controls_layout.addLayout(buttons_layout)
 
         # Draw axes button
         drawAxesButton = QPushButton("Draw Axes", self)
@@ -154,6 +156,11 @@ class ImageViewer(QMainWindow):
         digitizePointsButton = QPushButton("Digitize Points", self)
         digitizePointsButton.clicked.connect(self.digitizePoints)
         buttons_layout.addWidget(digitizePointsButton)
+
+        # Delete digitized points button
+        deletePointsButton = QPushButton("Delete Points", self)
+        deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
+        buttons_layout.addWidget(deletePointsButton)
 
         # Input fields for axes values
         formLayout = QFormLayout()
@@ -171,16 +178,28 @@ class ImageViewer(QMainWindow):
         formLayout.addRow("Xmax:", self.xmaxField)
         formLayout.addRow("Ymin:", self.yminField)
         formLayout.addRow("Ymax:", self.ymaxField)
-        layout.addLayout(formLayout)
+
+        controls_layout.addLayout(formLayout)
+
+        layout.addLayout(controls_layout, stretch=1)
+
+        side_layout = QVBoxLayout()
 
         # Table for digitized points
         self.pointsTable = QTableWidget()
         self.pointsTable.setColumnCount(2)
         self.pointsTable.setHorizontalHeaderLabels(["X", "Y"])
         self.pointsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(self.pointsTable)
+        self.pointsTable.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.pointsTable.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.pointsTable.installEventFilter(self)
+        side_layout.addWidget(self.pointsTable)
 
-        layout.addWidget(self.digitize_view)
+        side_widget = QWidget()
+        side_widget.setLayout(side_layout)
+
+        layout.addWidget(self.digitize_view, stretch=4)
+        layout.addWidget(side_widget, stretch=1)
 
         tab.setLayout(layout)
         return tab
@@ -209,6 +228,8 @@ class ImageViewer(QMainWindow):
                 if self.pointInImage(self.lastPoint):
                     if self.delete_mode:
                         self.handleDeleteAnnotation(self.lastPoint)
+                    elif self.delete_point_mode:
+                        self.handleDeletePoint(self.lastPoint)
                     elif self.measure_area_mode:
                         self.handlePolygonPoint(self.lastPoint)
                     elif self.digitize_mode:
@@ -220,8 +241,14 @@ class ImageViewer(QMainWindow):
         elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove and self.delete_mode:
             self.lastPoint = source.parent().mapToScene(event.position().toPoint())
             self.highlightDeleteCandidate(self.lastPoint)
+        elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove and self.delete_point_mode:
+            self.lastPoint = source.parent().mapToScene(event.position().toPoint())
+            self.highlightDeletePointCandidate(self.lastPoint)
         elif event.type() == QEvent.Wheel:
             self.handleWheelEvent(event, source.parent())
+        elif isinstance(source, QTableWidget) and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+                self.handleDeletePointFromTable()
         return super().eventFilter(source, event)
 
     def pointInImage(self, point):
@@ -263,6 +290,32 @@ class ImageViewer(QMainWindow):
         elif len(self.current_axes_points) == 4:
             self.y_axis = self.current_axes_points[2:]
             self.picking_axes_points = False
+        self.updateView()
+
+    def handleDeletePoint(self, point):
+        if self.delete_point_candidate:
+            self.digitized_points = [dp for dp in self.digitized_points if dp[0] != self.delete_point_candidate[0]]
+            self.delete_point_candidate = None
+            self.updatePointsTable()
+            self.updateView()
+
+    def handleDeletePointFromTable(self):
+        selected_row = self.pointsTable.currentRow()
+        if selected_row >= 0:
+            point_to_delete = self.digitized_points[selected_row]
+            self.digitized_points.remove(point_to_delete)
+            self.updatePointsTable()
+            self.updateView()
+
+    def highlightDeletePointCandidate(self, point):
+        threshold = 5.0  # Adjust the threshold as needed
+        for original_point, _, _ in self.digitized_points:
+            if math.hypot(point.x() - original_point.x(), point.y() - original_point.y()) <= threshold:
+                self.delete_point_candidate = (original_point, _, _)
+                self.updateView()
+                return
+
+        self.delete_point_candidate = None
         self.updateView()
 
     def calculateAndStoreArea(self, polygon_points):
@@ -355,6 +408,11 @@ class ImageViewer(QMainWindow):
         self.digitize_mode = False
         self.picking_axes_points = False
         self.delete_candidate = None  # Reset the delete candidate 
+        self.updateView()
+
+    def deleteDigitizedPoints(self):
+        self.delete_point_mode = not self.delete_point_mode
+        self.delete_point_candidate = None  # Reset the delete point candidate 
         self.updateView()
 
     def handleDeleteAnnotation(self, point):
@@ -473,8 +531,11 @@ class ImageViewer(QMainWindow):
                 painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
 
             # Draw digitized points
-            painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
             for original_point, x, y in self.digitized_points:
+                if self.delete_point_mode and self.delete_point_candidate == (original_point, x, y):
+                    painter.setPen(QPen(Qt.yellow, 10, Qt.SolidLine))  # Highlight in yellow
+                else:
+                    painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
                 painter.drawPoint(original_point)
 
             self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
@@ -510,22 +571,15 @@ class ImageViewer(QMainWindow):
     def drawAxes(self):
         self.digitize_mode = False
         self.delete_mode = False
+        self.delete_point_mode = False
         self.picking_axes_points = True
-        self.current_axes_points.clear()
-        self.updateView()
-
-    def redrawAxes(self):
-        self.digitize_mode = False
-        self.delete_mode = False
-        self.picking_axes_points = False
-        self.x_axis = None
-        self.y_axis = None
         self.current_axes_points.clear()
         self.updateView()
 
     def digitizePoints(self):
         self.digitize_mode = not self.digitize_mode
         self.delete_mode = False
+        self.delete_point_mode = False
         self.updateView()
 
     def convertToCoordinates(self, point):

@@ -19,12 +19,21 @@ Dependencies
 
 ## Project 1: Discount/Knockoff BlueBeam Revu Tool
 
-## Project 2: Bezier Curves Digitizer/Interpolator Tool
+Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imageviewer3.py) from a user-specified image. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
 
-## Project 3: CPT/SPT Data Processing & Site Characterization Tool
+TO DO:
+Highlighting
+Copying/saving data
+Bezier Curves Digitizer/Interpolator Tool
+Digitize by foreground color/pixel
+Improve Layout
 
-## Project 4: Triaxial Data Strength Enevelopes Tool
 
+
+![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/peek_demo.gif?raw=true)
+
+
+## Project 2: CPT/SPT Data Processing & Site Characterization Tool
 
 ## Other Notes
 
