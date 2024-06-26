@@ -1,15 +1,16 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
-                               QHBoxLayout, QFileDialog, QInputDialog, QSlider)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QWheelEvent
-from PySide6.QtCore import Qt, QEvent, QPointF, QRectF, QSize
+                               QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
+                               QFormLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem,
+                               QHeaderView)
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
+from PySide6.QtCore import Qt, QEvent, QPointF
 import math
 
 class ImageViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.initUI()
         self.scale_factor = None
         self.calibration_points = []  # Stores calibration points
         self.measurement_points = []  # Stores measurement points
@@ -23,23 +24,56 @@ class ImageViewer(QMainWindow):
         self.clean_image = None  # This will hold the clean copy of the image
         self.delete_candidate = None  # To track which line is a candidate for deletion
         self.zoom_factor = 1.0
+        self.x_axis = None
+        self.y_axis = None
+        self.xmin = 0
+        self.xmax = 100
+        self.ymin = 0
+        self.ymax = 100
+        self.digitize_mode = False
+        self.digitized_points = []
+        self.picking_axes_points = False
+        self.current_axes_points = []
+
+        self.annotation_view = QGraphicsView()
+        self.digitize_view = QGraphicsView()
+        
+        self.annotation_scene = QGraphicsScene()
+        self.digitize_scene = QGraphicsScene()
+
+        self.annotation_pixmapItem = QGraphicsPixmapItem()
+        self.digitize_pixmapItem = QGraphicsPixmapItem()
+
+        self.annotation_scene.addItem(self.annotation_pixmapItem)
+        self.digitize_scene.addItem(self.digitize_pixmapItem)
+
+        self.annotation_view.setScene(self.annotation_scene)
+        self.digitize_view.setScene(self.digitize_scene)
+
+        # Enable mouse tracking
+        self.annotation_view.setMouseTracking(True)
+        self.digitize_view.setMouseTracking(True)
+        
+        self.annotation_view.viewport().installEventFilter(self)
+        self.digitize_view.viewport().installEventFilter(self)
+
+        self.initUI()
 
     def initUI(self):
         self.setWindowTitle("Image Drawer")
         self.setGeometry(100, 100, 1000, 700)
 
-        # Layout and central widget
-        layout = QVBoxLayout()
-        centralWidget = QWidget(self)
-        self.setCentralWidget(centralWidget)
-        centralWidget.setLayout(layout)
+        # Create tabs
+        self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self.switchTab)
+        
+        self.tabs.addTab(self.createAnnotationTab(), "Annotate")
+        self.tabs.addTab(self.createDigitizeTab(), "Digitize")
+        self.setCentralWidget(self.tabs)
 
-        # Graphics view
-        self.scene = QGraphicsScene()
-        self.view = QGraphicsView(self.scene, self)
-        self.pixmapItem = QGraphicsPixmapItem()
-        self.scene.addItem(self.pixmapItem)
-        layout.addWidget(self.view)
+    def createAnnotationTab(self):
+        tab = QWidget()
+        layout = QVBoxLayout()
 
         # Control buttons layout
         buttons_layout = QHBoxLayout()
@@ -98,44 +132,104 @@ class ImageViewer(QMainWindow):
         self.zoomSlider.valueChanged.connect(self.zoomSliderChanged)
         layout.addWidget(self.zoomSlider)
 
-        # Enable mouse tracking
-        self.view.setMouseTracking(True)
-        self.view.viewport().installEventFilter(self)
+        layout.addWidget(self.annotation_view)
+
+        tab.setLayout(layout)
+        return tab
+
+    def createDigitizeTab(self):
+        tab = QWidget()
+        layout = QVBoxLayout()
+
+        # Control buttons layout
+        buttons_layout = QHBoxLayout()
+        layout.addLayout(buttons_layout)
+
+        # Draw axes button
+        drawAxesButton = QPushButton("Draw Axes", self)
+        drawAxesButton.clicked.connect(self.drawAxes)
+        buttons_layout.addWidget(drawAxesButton)
+
+        # Redraw axes button
+        redrawAxesButton = QPushButton("Redraw Axes", self)
+        redrawAxesButton.clicked.connect(self.redrawAxes)
+        buttons_layout.addWidget(redrawAxesButton)
+
+        # Digitize points button
+        digitizePointsButton = QPushButton("Digitize Points", self)
+        digitizePointsButton.clicked.connect(self.digitizePoints)
+        buttons_layout.addWidget(digitizePointsButton)
+
+        # Input fields for axes values
+        formLayout = QFormLayout()
+        self.xminField = QLineEdit(str(self.xmin))
+        self.xmaxField = QLineEdit(str(self.xmax))
+        self.yminField = QLineEdit(str(self.ymin))
+        self.ymaxField = QLineEdit(str(self.ymax))
+
+        self.xminField.editingFinished.connect(self.updateAxesValues)
+        self.xmaxField.editingFinished.connect(self.updateAxesValues)
+        self.yminField.editingFinished.connect(self.updateAxesValues)
+        self.ymaxField.editingFinished.connect(self.updateAxesValues)
+
+        formLayout.addRow("Xmin:", self.xminField)
+        formLayout.addRow("Xmax:", self.xmaxField)
+        formLayout.addRow("Ymin:", self.yminField)
+        formLayout.addRow("Ymax:", self.ymaxField)
+        layout.addLayout(formLayout)
+
+        # Table for digitized points
+        self.pointsTable = QTableWidget()
+        self.pointsTable.setColumnCount(2)
+        self.pointsTable.setHorizontalHeaderLabels(["X", "Y"])
+        self.pointsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.pointsTable)
+
+        layout.addWidget(self.digitize_view)
+
+        tab.setLayout(layout)
+        return tab
 
     def loadImage(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Image Files (*.png *.jpg *.bmp)")
         if path:
             self.image = QImage(path)
             self.clean_image = self.image.copy()  # Store a clean copy of the image
-            self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
+            self.annotation_pixmapItem.setPixmap(QPixmap.fromImage(self.image))
+            self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(self.image))
             self.measurements.clear()
             self.calibration_points.clear()
             self.measurement_points.clear()
             self.areas.clear()
             self.current_polygon.clear()
+            self.digitized_points.clear()
             self.annotations_visible = True
             self.updateView()
 
     def eventFilter(self, source, event):
-        if source is self.view.viewport() and event.type() == QEvent.MouseButtonPress:
+        if isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseButtonPress:
             if event.button() == Qt.LeftButton:
-                self.lastPoint = self.view.mapToScene(event.position().toPoint())
+                self.lastPoint = source.parent().mapToScene(event.position().toPoint())
                 if self.pointInImage(self.lastPoint):
                     if self.delete_mode:
                         self.handleDeleteAnnotation(self.lastPoint)
                     elif self.measure_area_mode:
                         self.handlePolygonPoint(self.lastPoint)
+                    elif self.digitize_mode:
+                        self.handleDigitizePoint(self.lastPoint)
+                    elif self.picking_axes_points:
+                        self.handleAxesPoint(self.lastPoint)
                     else:
                         self.handleMousePress(self.lastPoint)
-        elif source is self.view.viewport() and event.type() == QEvent.MouseMove and self.delete_mode:
-            self.lastPoint = self.view.mapToScene(event.position().toPoint())
+        elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove and self.delete_mode:
+            self.lastPoint = source.parent().mapToScene(event.position().toPoint())
             self.highlightDeleteCandidate(self.lastPoint)
         elif event.type() == QEvent.Wheel:
-            self.handleWheelEvent(event)
+            self.handleWheelEvent(event, source.parent())
         return super().eventFilter(source, event)
 
     def pointInImage(self, point):
-        return (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
+        return self.clean_image and (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
 
     def handleMousePress(self, point):
         if len(self.calibration_points) < 2:  # Calibration points
@@ -157,6 +251,23 @@ class ImageViewer(QMainWindow):
         else:
             self.current_polygon.append(point)
             self.markPoint(point)
+
+    def handleDigitizePoint(self, point):
+        x, y = self.convertToCoordinates(point)
+        self.digitized_points.append((x, y))
+        self.markPoint(point)
+        self.updatePointsTable()
+        self.updateView()
+
+    def handleAxesPoint(self, point):
+        self.current_axes_points.append(point)
+        self.markPoint(point)
+        if len(self.current_axes_points) == 2:
+            self.x_axis = self.current_axes_points[:2]
+        elif len(self.current_axes_points) == 4:
+            self.y_axis = self.current_axes_points[2:]
+            self.picking_axes_points = False
+        self.updateView()
 
     def calculateAndStoreArea(self, polygon_points):
         if len(polygon_points) < 3:
@@ -233,6 +344,9 @@ class ImageViewer(QMainWindow):
         self.measurement_points.clear()
         self.measurements.clear()
         self.areas.clear()
+        self.digitized_points.clear()
+        self.current_axes_points.clear()
+        self.updatePointsTable()
         self.updateView()
 
     def toggleAnnotations(self):
@@ -242,6 +356,8 @@ class ImageViewer(QMainWindow):
     def deleteAnnotation(self):
         self.delete_mode = not self.delete_mode
         self.measure_area_mode = False
+        self.digitize_mode = False
+        self.picking_axes_points = False
         self.delete_candidate = None  # Reset the delete candidate 
         self.updateView()
 
@@ -291,69 +407,158 @@ class ImageViewer(QMainWindow):
         self.updateView()
 
     def updateView(self):
+        if not self.clean_image:
+            return
+        
         temp_image = self.clean_image.copy()  # Start with a clean copy of the original image
-        painter = QPainter(temp_image)
 
-        if self.annotations_visible:
-            # Redraw calibration points
-            painter.setPen(QPen(Qt.green, 3, Qt.SolidLine))
-            for point in self.calibration_points:
-                painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
+        if self.tabs.currentIndex() == 0:
+            painter = QPainter(temp_image)
+            if self.annotations_visible:
+                # Redraw calibration points
+                painter.setPen(QPen(Qt.green, 3, Qt.SolidLine))
+                for point in self.calibration_points:
+                    painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
 
-            # Redraw measurement points
-            painter.setPen(QPen(Qt.red, 10, Qt.SolidLine))
-            for point in self.measurement_points:
+                # Redraw measurement points
+                painter.setPen(QPen(Qt.red, 10, Qt.SolidLine))
+                for point in self.measurement_points:
+                    painter.drawPoint(point)
+
+                # Redraw measurement lines
+                for p1, p2, distance in self.measurements:
+                    if self.delete_mode and (p1, p2, distance) == self.delete_candidate:
+                        painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                    else:
+                        painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
+                    painter.drawLine(p1, p2)
+                    mid_point = (p1 + p2) / 2
+                    painter.setFont(QFont("Arial", 14))
+                    painter.setPen(QPen(Qt.red))
+                    painter.drawText(mid_point, f"{distance:.2f}")
+
+                # Redraw areas
+                for polygon, area in self.areas:
+                    if self.delete_mode and polygon == self.delete_candidate:
+                        painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                    else:
+                        painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
+                    painter.drawPolygon(polygon)
+                    mid_point = polygon.boundingRect().center()
+                    painter.setFont(QFont("Arial", 14))
+                    painter.setPen(QPen(Qt.red))
+                    painter.drawText(mid_point, f"{area:.2f}")
+
+                # Draw current polygon in progress
+                if self.measure_area_mode and len(self.current_polygon) > 0:
+                    painter.setPen(QPen(Qt.cyan, 2, Qt.SolidLine))
+                    for i in range(len(self.current_polygon) - 1):
+                        painter.drawLine(self.current_polygon[i], self.current_polygon[i + 1])
+                    painter.drawLine(self.current_polygon[-1], self.lastPoint)
+
+            self.annotation_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
+
+        elif self.tabs.currentIndex() == 1:
+            painter = QPainter(temp_image)
+            # Draw x and y axes
+            if self.x_axis and self.y_axis:
+                painter.setPen(QPen(Qt.black, 2, Qt.SolidLine))
+                painter.drawLine(self.x_axis[0], self.x_axis[1])
+                painter.drawLine(self.y_axis[0], self.y_axis[1])
+                painter.setFont(QFont("Arial", 10))
+                painter.setPen(QPen(Qt.black))
+                painter.drawText(self.x_axis[1], f"X: {self.xmin} to {self.xmax}")
+                painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
+
+            # Draw digitized points
+            painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
+            for x, y in self.digitized_points:
+                point = self.convertFromCoordinates(x, y)
                 painter.drawPoint(point)
 
-            # Redraw measurement lines
-            for p1, p2, distance in self.measurements:
-                if self.delete_mode and (p1, p2, distance) == self.delete_candidate:
-                    painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
-                else:
-                    painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
-                painter.drawLine(p1, p2)
-                mid_point = (p1 + p2) / 2
-                painter.setFont(QFont("Arial", 14))
-                painter.setPen(QPen(Qt.red))
-                painter.drawText(mid_point, f"{distance:.2f}")
-
-            # Redraw areas
-            for polygon, area in self.areas:
-                if self.delete_mode and polygon == self.delete_candidate:
-                    painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
-                else:
-                    painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
-                painter.drawPolygon(polygon)
-                mid_point = polygon.boundingRect().center()
-                painter.setFont(QFont("Arial", 14))
-                painter.setPen(QPen(Qt.red))
-                painter.drawText(mid_point, f"{area:.2f}")
-
-            # Draw current polygon in progress
-            if self.measure_area_mode and len(self.current_polygon) > 0:
-                painter.setPen(QPen(Qt.cyan, 2, Qt.SolidLine))
-                for i in range(len(self.current_polygon) - 1):
-                    painter.drawLine(self.current_polygon[i], self.current_polygon[i + 1])
-                painter.drawLine(self.current_polygon[-1], self.lastPoint)
+            self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
 
         painter.end()
-        self.image = temp_image
-        self.pixmapItem.setPixmap(QPixmap.fromImage(self.image))
 
-    def handleWheelEvent(self, event):
-        zoom_factor = 1.25 if event.angleDelta().y() > 0 else 0.8
-        self.view.scale(zoom_factor, zoom_factor)
+    def handleWheelEvent(self, event, source):
+        if isinstance(source, QGraphicsView):
+            zoom_factor = 1.25 if event.angleDelta().y() > 0 else 0.8
+            source.scale(zoom_factor, zoom_factor)
 
     def zoomIn(self):
-        self.view.scale(1.25, 1.25)
+        if self.tabs.currentIndex() == 0:
+            self.annotation_view.scale(1.25, 1.25)
+        else:
+            self.digitize_view.scale(1.25, 1.25)
 
     def zoomOut(self):
-        self.view.scale(0.8, 0.8)
+        if self.tabs.currentIndex() == 0:
+            self.annotation_view.scale(0.8, 0.8)
+        else:
+            self.digitize_view.scale(0.8, 0.8)
 
     def zoomSliderChanged(self, value):
         scale_factor = value / 100.0
-        self.view.resetTransform()
-        self.view.scale(scale_factor, scale_factor)
+        if self.tabs.currentIndex() == 0:
+            self.annotation_view.resetTransform()
+            self.annotation_view.scale(scale_factor, scale_factor)
+        else:
+            self.digitize_view.resetTransform()
+            self.digitize_view.scale(scale_factor, scale_factor)
+
+    def drawAxes(self):
+        self.digitize_mode = False
+        self.delete_mode = False
+        self.picking_axes_points = True
+        self.current_axes_points.clear()
+        self.updateView()
+
+    def redrawAxes(self):
+        self.digitize_mode = False
+        self.delete_mode = False
+        self.picking_axes_points = False
+        self.x_axis = None
+        self.y_axis = None
+        self.current_axes_points.clear()
+        self.updateView()
+
+    def digitizePoints(self):
+        self.digitize_mode = not self.digitize_mode
+        self.delete_mode = False
+        self.updateView()
+
+    def convertToCoordinates(self, point):
+        if self.x_axis and self.y_axis:
+            x = self.xmin + (point.x() - self.x_axis[0].x()) / (self.x_axis[1].x() - self.x_axis[0].x()) * (self.xmax - self.xmin)
+            y = self.ymin + (point.y() - self.y_axis[0].y()) / (self.y_axis[1].y() - self.y_axis[0].y()) * (self.ymax - self.ymin)
+            return x, y
+        return 0, 0
+
+    def convertFromCoordinates(self, x, y):
+        if self.x_axis and self.y_axis:
+            px = self.x_axis[0].x() + (x - self.xmin) / (self.xmax - self.xmin) * (self.x_axis[1].x() - self.x_axis[0].x())
+            py = self.y_axis[0].y() + (y - self.ymin) / (self.ymax - self.ymin) * (self.y_axis[1].y() - self.y_axis[0].y())
+            return QPointF(px, py)
+        return QPointF()
+
+    def updateAxesValues(self):
+        try:
+            self.xmin = float(self.xminField.text())
+            self.xmax = float(self.xmaxField.text())
+            self.ymin = float(self.yminField.text())
+            self.ymax = float(self.ymaxField.text())
+            self.updateView()
+        except ValueError:
+            pass  # Invalid input, ignore
+
+    def updatePointsTable(self):
+        self.pointsTable.setRowCount(len(self.digitized_points))
+        for i, (x, y) in enumerate(self.digitized_points):
+            self.pointsTable.setItem(i, 0, QTableWidgetItem(f"{x:.2f}"))
+            self.pointsTable.setItem(i, 1, QTableWidgetItem(f"{y:.2f}"))
+
+    def switchTab(self, index):
+        self.updateView()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
