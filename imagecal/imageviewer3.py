@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraph
                                QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
                                QFormLayout, QLineEdit, QLabel, QTableWidget, QTableWidgetItem,
                                QHeaderView)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
-from PySide6.QtCore import Qt, QEvent, QPointF
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QTransform
+from PySide6.QtCore import Qt, QEvent, QPointF, QRectF
 import math
 
 class ImageViewer(QMainWindow):
@@ -150,11 +150,6 @@ class ImageViewer(QMainWindow):
         drawAxesButton.clicked.connect(self.drawAxes)
         buttons_layout.addWidget(drawAxesButton)
 
-        # Redraw axes button
-        redrawAxesButton = QPushButton("Redraw Axes", self)
-        redrawAxesButton.clicked.connect(self.redrawAxes)
-        buttons_layout.addWidget(redrawAxesButton)
-
         # Digitize points button
         digitizePointsButton = QPushButton("Digitize Points", self)
         digitizePointsButton.clicked.connect(self.digitizePoints)
@@ -203,6 +198,7 @@ class ImageViewer(QMainWindow):
             self.areas.clear()
             self.current_polygon.clear()
             self.digitized_points.clear()
+            self.current_axes_points.clear()
             self.annotations_visible = True
             self.updateView()
 
@@ -254,7 +250,7 @@ class ImageViewer(QMainWindow):
 
     def handleDigitizePoint(self, point):
         x, y = self.convertToCoordinates(point)
-        self.digitized_points.append((x, y))
+        self.digitized_points.append((point, x, y))  # Store the original point as well
         self.markPoint(point)
         self.updatePointsTable()
         self.updateView()
@@ -461,20 +457,25 @@ class ImageViewer(QMainWindow):
         elif self.tabs.currentIndex() == 1:
             painter = QPainter(temp_image)
             # Draw x and y axes
-            if self.x_axis and self.y_axis:
+            if self.x_axis:
                 painter.setPen(QPen(Qt.black, 2, Qt.SolidLine))
                 painter.drawLine(self.x_axis[0], self.x_axis[1])
-                painter.drawLine(self.y_axis[0], self.y_axis[1])
+                self.drawArrow(painter, self.x_axis[0], self.x_axis[1])
                 painter.setFont(QFont("Arial", 10))
                 painter.setPen(QPen(Qt.black))
                 painter.drawText(self.x_axis[1], f"X: {self.xmin} to {self.xmax}")
+            if self.y_axis:
+                painter.setPen(QPen(Qt.black, 2, Qt.SolidLine))
+                painter.drawLine(self.y_axis[0], self.y_axis[1])
+                self.drawArrow(painter, self.y_axis[0], self.y_axis[1])
+                painter.setFont(QFont("Arial", 10))
+                painter.setPen(QPen(Qt.black))
                 painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
 
             # Draw digitized points
             painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
-            for x, y in self.digitized_points:
-                point = self.convertFromCoordinates(x, y)
-                painter.drawPoint(point)
+            for original_point, x, y in self.digitized_points:
+                painter.drawPoint(original_point)
 
             self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
 
@@ -529,9 +530,13 @@ class ImageViewer(QMainWindow):
 
     def convertToCoordinates(self, point):
         if self.x_axis and self.y_axis:
-            x = self.xmin + (point.x() - self.x_axis[0].x()) / (self.x_axis[1].x() - self.x_axis[0].x()) * (self.xmax - self.xmin)
-            y = self.ymin + (point.y() - self.y_axis[0].y()) / (self.y_axis[1].y() - self.y_axis[0].y()) * (self.ymax - self.ymin)
-            return x, y
+            x0, x1 = self.x_axis
+            y0, y1 = self.y_axis
+
+            dx = (point.x() - x0.x()) / (x1.x() - x0.x()) * (self.xmax - self.xmin) + self.xmin
+            dy = (point.y() - y0.y()) / (y1.y() - y0.y()) * (self.ymax - self.ymin) + self.ymin
+
+            return dx, dy
         return 0, 0
 
     def convertFromCoordinates(self, x, y):
@@ -543,19 +548,51 @@ class ImageViewer(QMainWindow):
 
     def updateAxesValues(self):
         try:
-            self.xmin = float(self.xminField.text())
-            self.xmax = float(self.xmaxField.text())
-            self.ymin = float(self.yminField.text())
-            self.ymax = float(self.ymaxField.text())
-            self.updateView()
+            new_xmin = float(self.xminField.text())
+            new_xmax = float(self.xmaxField.text())
+            new_ymin = float(self.yminField.text())
+            new_ymax = float(self.ymaxField.text())
+
+            if new_xmin < new_xmax and new_ymin < new_ymax:
+                self.xmin = new_xmin
+                self.xmax = new_xmax
+                self.ymin = new_ymin
+                self.ymax = new_ymax
+                self.updatePointsTable()  # Update points table with new values
+                self.updateView()
+            else:
+                # Revert to previous values if validation fails
+                self.xminField.setText(str(self.xmin))
+                self.xmaxField.setText(str(self.xmax))
+                self.yminField.setText(str(self.ymin))
+                self.ymaxField.setText(str(self.ymax))
+
         except ValueError:
             pass  # Invalid input, ignore
 
     def updatePointsTable(self):
         self.pointsTable.setRowCount(len(self.digitized_points))
-        for i, (x, y) in enumerate(self.digitized_points):
+        for i, (original_point, _, _) in enumerate(self.digitized_points):
+            x, y = self.convertToCoordinates(original_point)
+            self.digitized_points[i] = (original_point, x, y)  # Update the stored x, y values
             self.pointsTable.setItem(i, 0, QTableWidgetItem(f"{x:.2f}"))
             self.pointsTable.setItem(i, 1, QTableWidgetItem(f"{y:.2f}"))
+
+    def drawArrow(self, painter, p1, p2):
+        arrow_size = 10
+        line_angle = math.atan2(p2.y() - p1.y(), p2.x() - p1.x())
+        
+        arrow_p1 = QPointF(
+            p2.x() - arrow_size * math.cos(line_angle - math.pi / 6),
+            p2.y() - arrow_size * math.sin(line_angle - math.pi / 6)
+        )
+        arrow_p2 = QPointF(
+            p2.x() - arrow_size * math.cos(line_angle + math.pi / 6),
+            p2.y() - arrow_size * math.sin(line_angle + math.pi / 6)
+        )
+
+        painter.drawLine(p2, arrow_p1)
+        painter.drawLine(p2, arrow_p2)
 
     def switchTab(self, index):
         self.updateView()
