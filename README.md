@@ -17,7 +17,9 @@ Dependencies
 * `pandas 2.2.2` for data handling
 * `scipy 1.13.1` for interpolation methods
 
-## Project 1: Discount/Knockoff BlueBeam Revu Tool
+## Project 1: Simple Annotation and Digitization Tool
+
+Knockoff/discount versions of two of my favorite/most-used tools at work: Revu BlueBeam, and WebPlotDigitizer!
 
 Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imageviewer3.py) from a user-specified image. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
 
