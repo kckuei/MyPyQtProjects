@@ -2,9 +2,9 @@ import sys
 import pandas as pd
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
-                               QHBoxLayout, QFileDialog, QInputDialog, QTabWidget,
+                               QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-                               QHeaderView, QAbstractItemView, QComboBox, QLabel)
+                               QHeaderView, QAbstractItemView, QComboBox, QLabel, QGridLayout)
 from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QColor
 from PySide6.QtCore import Qt, QEvent, QPointF
 import math
@@ -85,6 +85,10 @@ class ImageViewer(QMainWindow):
         self.current_length_unit = "meters"
         self.current_area_unit = "sq. meters"
 
+        self.point_size = 5  # Default point size
+        self.line_width = 2  # Default line width
+        self.text_label_size = 14  # Default text label size
+
         self.initUI()
 
     def initUI(self):
@@ -164,6 +168,34 @@ class ImageViewer(QMainWindow):
         areaUnitDropdown.setCurrentText(self.current_area_unit)
         areaUnitDropdown.currentTextChanged.connect(self.updateAreaUnit)
         buttons_layout.addWidget(areaUnitDropdown)
+
+        # Sliders for point size, line width, and text label size
+        pointSizeSlider = QSlider(Qt.Horizontal)
+        pointSizeSlider.setMinimum(1)
+        pointSizeSlider.setMaximum(20)
+        pointSizeSlider.setValue(self.point_size)
+        pointSizeSlider.valueChanged.connect(self.updatePointSize)
+        pointSizeSlider.setFixedWidth(150)
+        buttons_layout.addWidget(QLabel("Point Size"))
+        buttons_layout.addWidget(pointSizeSlider)
+
+        lineWidthSlider = QSlider(Qt.Horizontal)
+        lineWidthSlider.setMinimum(1)
+        lineWidthSlider.setMaximum(10)
+        lineWidthSlider.setValue(self.line_width)
+        lineWidthSlider.valueChanged.connect(self.updateLineWidth)
+        lineWidthSlider.setFixedWidth(150)
+        buttons_layout.addWidget(QLabel("Line Width"))
+        buttons_layout.addWidget(lineWidthSlider)
+
+        textSizeSlider = QSlider(Qt.Horizontal)
+        textSizeSlider.setMinimum(10)
+        textSizeSlider.setMaximum(30)
+        textSizeSlider.setValue(self.text_label_size)
+        textSizeSlider.valueChanged.connect(self.updateTextSize)
+        textSizeSlider.setFixedWidth(150)
+        buttons_layout.addWidget(QLabel("Text Label Size"))
+        buttons_layout.addWidget(textSizeSlider)
 
         # Move buttons up
         buttons_layout.addStretch(1)
@@ -271,6 +303,34 @@ class ImageViewer(QMainWindow):
 
         controls_layout.addLayout(colorLayout)
 
+        # Sliders for point size, line width, and text label size
+        pointSizeSlider = QSlider(Qt.Horizontal)
+        pointSizeSlider.setMinimum(1)
+        pointSizeSlider.setMaximum(20)
+        pointSizeSlider.setValue(self.point_size)
+        pointSizeSlider.valueChanged.connect(self.updatePointSize)
+        pointSizeSlider.setFixedWidth(150)
+        controls_layout.addWidget(QLabel("Point Size"))
+        controls_layout.addWidget(pointSizeSlider)
+
+        lineWidthSlider = QSlider(Qt.Horizontal)
+        lineWidthSlider.setMinimum(1)
+        lineWidthSlider.setMaximum(10)
+        lineWidthSlider.setValue(self.line_width)
+        lineWidthSlider.valueChanged.connect(self.updateLineWidth)
+        lineWidthSlider.setFixedWidth(150)
+        controls_layout.addWidget(QLabel("Line Width"))
+        controls_layout.addWidget(lineWidthSlider)
+
+        textSizeSlider = QSlider(Qt.Horizontal)
+        textSizeSlider.setMinimum(10)
+        textSizeSlider.setMaximum(30)
+        textSizeSlider.setValue(self.text_label_size)
+        textSizeSlider.valueChanged.connect(self.updateTextSize)
+        textSizeSlider.setFixedWidth(150)
+        controls_layout.addWidget(QLabel("Text Label Size"))
+        controls_layout.addWidget(textSizeSlider)
+
         # Move buttons up
         controls_layout.addStretch(1)
 
@@ -346,7 +406,7 @@ class ImageViewer(QMainWindow):
         return self.clean_image and (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
 
     def handleMousePress(self, point):
-        if len(self.calibration_points) < 2 and self.tabs.currentIndex() == 0:  # Calibration points
+        if len(self.calibration_points) < 2:  # Calibration points
             self.calibration_points.append(point)
             self.markPoint(point)
             if len(self.calibration_points) == 2:
@@ -433,10 +493,11 @@ class ImageViewer(QMainWindow):
         return area
 
     def promptScaleInput(self):
-        distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
+        distance, ok = QInputDialog.getDouble(self, "Input Scale", f"Enter the distance between the two points ({self.current_length_unit}):")
         if ok:
             pixel_distance = self.calculateDistance(self.calibration_points[0], self.calibration_points[1])
-            self.scale_factor = distance / pixel_distance
+            real_distance = self.convertLengthUnits(distance, from_unit=self.current_length_unit, to_unit="meters")
+            self.scale_factor = real_distance / pixel_distance
             self.updateMeasurements()
 
     def calculateDistance(self, point1, point2):
@@ -582,37 +643,37 @@ class ImageViewer(QMainWindow):
                     painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
 
                 # Redraw measurement points
-                painter.setPen(QPen(Qt.red, 10, Qt.SolidLine))
+                painter.setPen(QPen(Qt.red, self.point_size, Qt.SolidLine))
                 for point in self.measurement_points:
                     painter.drawPoint(point)
 
                 # Redraw measurement lines
                 for p1, p2, distance in self.measurements:
                     if self.delete_mode and (p1, p2, distance) == self.delete_candidate:
-                        painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                        painter.setPen(QPen(Qt.yellow, self.line_width, Qt.SolidLine))  # Highlight in yellow
                     else:
-                        painter.setPen(QPen(Qt.blue, 2, Qt.SolidLine))
+                        painter.setPen(QPen(Qt.blue, self.line_width, Qt.SolidLine))
                     painter.drawLine(p1, p2)
                     mid_point = (p1 + p2) / 2
-                    painter.setFont(QFont("Arial", 14))
+                    painter.setFont(QFont("Arial", self.text_label_size))
                     painter.setPen(QPen(Qt.red))
                     painter.drawText(mid_point, f"{distance:.2f} {self.current_length_unit}")
 
                 # Redraw areas
                 for polygon, area in self.areas:
                     if self.delete_mode and polygon == self.delete_candidate:
-                        painter.setPen(QPen(Qt.yellow, 2, Qt.SolidLine))  # Highlight in yellow
+                        painter.setPen(QPen(Qt.yellow, self.line_width, Qt.SolidLine))  # Highlight in yellow
                     else:
-                        painter.setPen(QPen(Qt.magenta, 2, Qt.SolidLine))
+                        painter.setPen(QPen(Qt.magenta, self.line_width, Qt.SolidLine))
                     painter.drawPolygon(polygon)
                     mid_point = polygon.boundingRect().center()
-                    painter.setFont(QFont("Arial", 14))
+                    painter.setFont(QFont("Arial", self.text_label_size))
                     painter.setPen(QPen(Qt.red))
                     painter.drawText(mid_point, f"{area:.2f} {self.current_area_unit}")
 
                 # Draw current polygon in progress
                 if self.measure_area_mode and len(self.current_polygon) > 0:
-                    painter.setPen(QPen(Qt.cyan, 2, Qt.SolidLine))
+                    painter.setPen(QPen(Qt.cyan, self.line_width, Qt.SolidLine))
                     for i in range(len(self.current_polygon) - 1):
                         painter.drawLine(self.current_polygon[i], self.current_polygon[i + 1])
                     painter.drawLine(self.current_polygon[-1], self.lastPoint)
@@ -623,17 +684,17 @@ class ImageViewer(QMainWindow):
             painter = QPainter(temp_image)
             # Draw x and y axes
             if self.x_axis:
-                painter.setPen(QPen(self.axis_color, 2, Qt.SolidLine))
+                painter.setPen(QPen(self.axis_color, self.line_width, Qt.SolidLine))
                 painter.drawLine(self.x_axis[0], self.x_axis[1])
                 self.drawArrow(painter, self.x_axis[0], self.x_axis[1])
-                painter.setFont(QFont("Arial", 10))
+                painter.setFont(QFont("Arial", self.text_label_size))
                 painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.x_axis[1], f"X: {self.xmin} to {self.xmax}")
             if self.y_axis:
-                painter.setPen(QPen(self.axis_color, 2, Qt.SolidLine))
+                painter.setPen(QPen(self.axis_color, self.line_width, Qt.SolidLine))
                 painter.drawLine(self.y_axis[0], self.y_axis[1])
                 self.drawArrow(painter, self.y_axis[0], self.y_axis[1])
-                painter.setFont(QFont("Arial", 10))
+                painter.setFont(QFont("Arial", self.text_label_size))
                 painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
 
@@ -641,23 +702,23 @@ class ImageViewer(QMainWindow):
             for original_point, x, y in self.digitized_points:
                 if (self.delete_point_mode and self.delete_point_candidate == (original_point, x, y)) or \
                    (self.selected_point == (original_point, x, y)):
-                    painter.setPen(QPen(Qt.yellow, 10, Qt.SolidLine))  # Highlight in yellow
+                    painter.setPen(QPen(Qt.yellow, self.point_size, Qt.SolidLine))  # Highlight in yellow
                 elif any(selected == (original_point, x, y) for selected in self.selected_points):
-                    painter.setPen(QPen(Qt.green, 10, Qt.SolidLine))  # Highlight selected points in green
+                    painter.setPen(QPen(Qt.green, self.point_size, Qt.SolidLine))  # Highlight selected points in green
                 else:
-                    painter.setPen(QPen(self.point_color, 10, Qt.SolidLine))
+                    painter.setPen(QPen(self.point_color, self.point_size, Qt.SolidLine))
                 painter.drawPoint(original_point)
                 if self.text_labels_visible:
-                    painter.setFont(QFont("Arial", 10))
+                    painter.setFont(QFont("Arial", self.text_label_size))
                     painter.setPen(QPen(self.label_color))
                     painter.drawText(original_point, f"({x:.2f}, {y:.2f})")
 
             # Draw current axis line in progress
             if self.picking_axes_points and len(self.current_axes_points) == 1:
-                painter.setPen(QPen(self.axis_color, 2, Qt.DashLine))
+                painter.setPen(QPen(self.axis_color, self.line_width, Qt.DashLine))
                 painter.drawLine(self.current_axes_points[0], self.lastPoint)
             elif self.picking_axes_points and len(self.current_axes_points) == 3:
-                painter.setPen(QPen(self.axis_color, 2, Qt.DashLine))
+                painter.setPen(QPen(self.axis_color, self.line_width, Qt.DashLine))
                 painter.drawLine(self.current_axes_points[2], self.lastPoint)
 
             self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
@@ -680,6 +741,15 @@ class ImageViewer(QMainWindow):
             self.annotation_view.scale(0.8, 0.8)
         else:
             self.digitize_view.scale(0.8, 0.8)
+
+    def zoomSliderChanged(self, value):
+        scale_factor = value / 100.0
+        if self.tabs.currentIndex() == 0:
+            self.annotation_view.resetTransform()
+            self.annotation_view.scale(scale_factor, scale_factor)
+        else:
+            self.digitize_view.resetTransform()
+            self.digitize_view.scale(scale_factor, scale_factor)
 
     def drawAxes(self):
         self.digitize_mode = False
@@ -792,10 +862,10 @@ class ImageViewer(QMainWindow):
         if index == 0:
             self.digitize_mode = False
             self.delete_point_mode = False
-        elif index == 1:
-            self.measure_area_mode = False
-            self.delete_mode = False
             self.picking_axes_points = False
+        else:
+            self.delete_mode = False
+            self.measure_area_mode = False
         self.updateView()
 
     def updateLengthUnit(self, unit):
@@ -805,6 +875,18 @@ class ImageViewer(QMainWindow):
     def updateAreaUnit(self, unit):
         self.current_area_unit = unit
         self.updateMeasurements()
+
+    def updatePointSize(self, value):
+        self.point_size = value
+        self.updateView()
+
+    def updateLineWidth(self, value):
+        self.line_width = value
+        self.updateView()
+
+    def updateTextSize(self, value):
+        self.text_label_size = value
+        self.updateView()
 
     def convertLengthUnits(self, value, from_unit, to_unit):
         conversion_factors = {
