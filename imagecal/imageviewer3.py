@@ -2,9 +2,9 @@ import sys
 import pandas as pd
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
-                               QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
+                               QHBoxLayout, QFileDialog, QInputDialog, QTabWidget,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-                               QHeaderView, QAbstractItemView, QComboBox, QLabel, QGridLayout)
+                               QHeaderView, QAbstractItemView, QComboBox, QLabel)
 from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QColor
 from PySide6.QtCore import Qt, QEvent, QPointF
 import math
@@ -346,7 +346,7 @@ class ImageViewer(QMainWindow):
         return self.clean_image and (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
 
     def handleMousePress(self, point):
-        if len(self.calibration_points) < 2:  # Calibration points
+        if len(self.calibration_points) < 2 and self.tabs.currentIndex() == 0:  # Calibration points
             self.calibration_points.append(point)
             self.markPoint(point)
             if len(self.calibration_points) == 2:
@@ -436,8 +436,7 @@ class ImageViewer(QMainWindow):
         distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
         if ok:
             pixel_distance = self.calculateDistance(self.calibration_points[0], self.calibration_points[1])
-            distance_in_meters = self.convertLengthUnits(distance, from_unit=self.current_length_unit, to_unit="meters")
-            self.scale_factor = distance_in_meters / pixel_distance
+            self.scale_factor = distance / pixel_distance
             self.updateMeasurements()
 
     def calculateDistance(self, point1, point2):
@@ -682,15 +681,6 @@ class ImageViewer(QMainWindow):
         else:
             self.digitize_view.scale(0.8, 0.8)
 
-    def zoomSliderChanged(self, value):
-        scale_factor = value / 100.0
-        if self.tabs.currentIndex() == 0:
-            self.annotation_view.resetTransform()
-            self.annotation_view.scale(scale_factor, scale_factor)
-        else:
-            self.digitize_view.resetTransform()
-            self.digitize_view.scale(scale_factor, scale_factor)
-
     def drawAxes(self):
         self.digitize_mode = False
         self.delete_mode = False
@@ -799,6 +789,13 @@ class ImageViewer(QMainWindow):
         df.to_clipboard(index=False)
 
     def switchTab(self, index):
+        if index == 0:
+            self.digitize_mode = False
+            self.delete_point_mode = False
+        elif index == 1:
+            self.measure_area_mode = False
+            self.delete_mode = False
+            self.picking_axes_points = False
         self.updateView()
 
     def updateLengthUnit(self, unit):
