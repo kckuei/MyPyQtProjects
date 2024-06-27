@@ -3,8 +3,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraph
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
                                QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-                               QHeaderView, QAbstractItemView)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF
+                               QHeaderView, QAbstractItemView, QComboBox, QLabel)
+from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QColor
 from PySide6.QtCore import Qt, QEvent, QPointF
 import math
 
@@ -21,6 +21,7 @@ class ImageViewer(QMainWindow):
         self.delete_point_mode = False
         self.measure_area_mode = False
         self.annotations_visible = True
+        self.text_labels_visible = True
         self.pen = QPen(Qt.red, 10, Qt.SolidLine)  # Initialize the pen attribute here
         self.clean_image = None  # This will hold the clean copy of the image
         self.delete_candidate = None  # To track which line is a candidate for deletion
@@ -70,6 +71,12 @@ class ImageViewer(QMainWindow):
         self.annotation_view.viewport().installEventFilter(self)
         self.digitize_view.viewport().installEventFilter(self)
         
+        # Default colors
+        self.axis_color = Qt.black
+        self.axis_text_color = Qt.black
+        self.point_color = Qt.blue
+        self.label_color = Qt.black
+
         self.initUI()
 
     def initUI(self):
@@ -174,6 +181,20 @@ class ImageViewer(QMainWindow):
         deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
         buttons_layout.addWidget(deletePointsButton)
 
+        # Zoom in and zoom out buttons
+        zoomInButton = QPushButton("Zoom In", self)
+        zoomInButton.clicked.connect(self.zoomIn)
+        buttons_layout.addWidget(zoomInButton)
+
+        zoomOutButton = QPushButton("Zoom Out", self)
+        zoomOutButton.clicked.connect(self.zoomOut)
+        buttons_layout.addWidget(zoomOutButton)
+
+        # Toggle text labels button
+        toggleTextLabelsButton = QPushButton("Toggle Text Labels", self)
+        toggleTextLabelsButton.clicked.connect(self.toggleTextLabels)
+        buttons_layout.addWidget(toggleTextLabelsButton)
+
         # Input fields for axes values
         formLayout = QFormLayout()
         self.xminField = QLineEdit(str(self.xmin))
@@ -192,6 +213,31 @@ class ImageViewer(QMainWindow):
         formLayout.addRow("Ymax:", self.ymaxField)
 
         controls_layout.addLayout(formLayout)
+
+        # Dropdowns for changing colors
+        colorLayout = QFormLayout()
+        self.axisColorDropdown = QComboBox()
+        self.axisColorDropdown.addItems(["Black", "Red", "Green", "Blue", "Yellow"])
+        self.axisColorDropdown.currentTextChanged.connect(self.updateColors)
+
+        self.axisTextColorDropdown = QComboBox()
+        self.axisTextColorDropdown.addItems(["Black", "Red", "Green", "Blue", "Yellow"])
+        self.axisTextColorDropdown.currentTextChanged.connect(self.updateColors)
+
+        self.pointColorDropdown = QComboBox()
+        self.pointColorDropdown.addItems(["Blue", "Red", "Green", "Black", "Yellow"])
+        self.pointColorDropdown.currentTextChanged.connect(self.updateColors)
+
+        self.labelColorDropdown = QComboBox()
+        self.labelColorDropdown.addItems(["Black", "Red", "Green", "Blue", "Yellow"])
+        self.labelColorDropdown.currentTextChanged.connect(self.updateColors)
+
+        colorLayout.addRow("Axis Color:", self.axisColorDropdown)
+        colorLayout.addRow("Axis Text Color:", self.axisTextColorDropdown)
+        colorLayout.addRow("Point Color:", self.pointColorDropdown)
+        colorLayout.addRow("Label Color:", self.labelColorDropdown)
+
+        controls_layout.addLayout(colorLayout)
 
         layout.addLayout(controls_layout, stretch=1)
 
@@ -244,12 +290,14 @@ class ImageViewer(QMainWindow):
                         self.handleAxesPoint(self.lastPoint)
                     else:
                         self.handleMousePress(self.lastPoint)
-        elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove and self.delete_mode:
+        elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove:
             self.lastPoint = source.parent().mapToScene(event.position().toPoint())
-            self.highlightDeleteCandidate(self.lastPoint)
-        elif isinstance(source.parent(), QGraphicsView) and event.type() == QEvent.MouseMove and self.delete_point_mode:
-            self.lastPoint = source.parent().mapToScene(event.position().toPoint())
-            self.highlightDeletePointCandidate(self.lastPoint)
+            if self.delete_mode:
+                self.highlightDeleteCandidate(self.lastPoint)
+            elif self.delete_point_mode:
+                self.highlightDeletePointCandidate(self.lastPoint)
+            elif self.picking_axes_points:
+                self.updateView()
         elif event.type() == QEvent.Wheel:
             self.handleWheelEvent(event, source.parent())
         elif isinstance(source, QTableWidget) and event.type() == QEvent.KeyPress:
@@ -429,6 +477,10 @@ class ImageViewer(QMainWindow):
         self.delete_point_candidate = None  # Reset the delete point candidate 
         self.updateView()
 
+    def toggleTextLabels(self):
+        self.text_labels_visible = not self.text_labels_visible
+        self.updateView()
+
     def handleDeleteAnnotation(self, point):
         if self.delete_candidate:
             if isinstance(self.delete_candidate, tuple) and len(self.delete_candidate) == 3:
@@ -530,18 +582,18 @@ class ImageViewer(QMainWindow):
             painter = QPainter(temp_image)
             # Draw x and y axes
             if self.x_axis:
-                painter.setPen(QPen(Qt.black, 2, Qt.SolidLine))
+                painter.setPen(QPen(self.axis_color, 2, Qt.SolidLine))
                 painter.drawLine(self.x_axis[0], self.x_axis[1])
                 self.drawArrow(painter, self.x_axis[0], self.x_axis[1])
                 painter.setFont(QFont("Arial", 10))
-                painter.setPen(QPen(Qt.black))
+                painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.x_axis[1], f"X: {self.xmin} to {self.xmax}")
             if self.y_axis:
-                painter.setPen(QPen(Qt.black, 2, Qt.SolidLine))
+                painter.setPen(QPen(self.axis_color, 2, Qt.SolidLine))
                 painter.drawLine(self.y_axis[0], self.y_axis[1])
                 self.drawArrow(painter, self.y_axis[0], self.y_axis[1])
                 painter.setFont(QFont("Arial", 10))
-                painter.setPen(QPen(Qt.black))
+                painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
 
             # Draw digitized points
@@ -550,8 +602,20 @@ class ImageViewer(QMainWindow):
                    (self.selected_point == (original_point, x, y)):
                     painter.setPen(QPen(Qt.yellow, 10, Qt.SolidLine))  # Highlight in yellow
                 else:
-                    painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
+                    painter.setPen(QPen(self.point_color, 10, Qt.SolidLine))
                 painter.drawPoint(original_point)
+                if self.text_labels_visible:
+                    painter.setFont(QFont("Arial", 10))
+                    painter.setPen(QPen(self.label_color))
+                    painter.drawText(original_point, f"({x:.2f}, {y:.2f})")
+
+            # Draw current axis line in progress
+            if self.picking_axes_points and len(self.current_axes_points) == 1:
+                painter.setPen(QPen(self.axis_color, 2, Qt.DashLine))
+                painter.drawLine(self.current_axes_points[0], self.lastPoint)
+            elif self.picking_axes_points and len(self.current_axes_points) == 3:
+                painter.setPen(QPen(self.axis_color, 2, Qt.DashLine))
+                painter.drawLine(self.current_axes_points[2], self.lastPoint)
 
             self.digitize_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
 
@@ -662,6 +726,20 @@ class ImageViewer(QMainWindow):
 
         painter.drawLine(p2, arrow_p1)
         painter.drawLine(p2, arrow_p2)
+
+    def updateColors(self):
+        color_map = {
+            "Black": Qt.black,
+            "Red": Qt.red,
+            "Green": Qt.green,
+            "Blue": Qt.blue,
+            "Yellow": Qt.yellow
+        }
+        self.axis_color = color_map[self.axisColorDropdown.currentText()]
+        self.axis_text_color = color_map[self.axisTextColorDropdown.currentText()]
+        self.point_color = color_map[self.pointColorDropdown.currentText()]
+        self.label_color = color_map[self.labelColorDropdown.currentText()]
+        self.updateView()
 
     def switchTab(self, index):
         self.updateView()
