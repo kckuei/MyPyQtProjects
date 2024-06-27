@@ -1,6 +1,6 @@
 # MyPyQtProjects
 
-Miscellaneous small PyQt projects to make life easier.
+Miscellaneous small PyQt projects.
 
 ## Project 0: Simple DataFit and Interpolation Tool
 
@@ -19,18 +19,17 @@ Dependencies
 
 ## Project 1: Simple Annotation and Digitization Tool
 
-Knockoff/discount versions of two of my favorite/most-used tools at work: Revu BlueBeam, and WebPlotDigitizer!
+Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imageviewer3.py) from a user-specified image. This is a knockoff/discount version of two of my favorite/most-used tools at work, Revu BlueBeam, and WebPlotDigitizer. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
 
-Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imageviewer3.py) from a user-specified image. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
-
-TO DO:
-Highlighting
-Copying/saving data
+Other Implementation Ideas:
 Bezier Curves Digitizer/Interpolator Tool
 Digitize by foreground color/pixel
-Improve Layout
 
-
+Dependencies
+* `PySide6 6.7.1` for the GUI components
+* `matplotlib 3.9.0` for plotting
+* `numpy 1.26.4` for numerical operations
+* `pandas 2.2.2` for data handling
 
 ![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/peek_demo.gif?raw=true)
 
