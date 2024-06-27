@@ -36,6 +36,7 @@ class ImageViewer(QMainWindow):
         self.digitized_points = []
         self.picking_axes_points = False
         self.current_axes_points = []
+        self.selected_point = None
 
         self.annotation_view = QGraphicsView()
         self.digitize_view = QGraphicsView()
@@ -52,12 +53,23 @@ class ImageViewer(QMainWindow):
         self.annotation_view.setScene(self.annotation_scene)
         self.digitize_view.setScene(self.digitize_scene)
 
+        # Table for digitized points
+        self.pointsTable = QTableWidget()
+        self.pointsTable.setColumnCount(2)
+        self.pointsTable.setHorizontalHeaderLabels(["X", "Y"])
+        self.pointsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.pointsTable.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.pointsTable.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.pointsTable.itemSelectionChanged.connect(self.highlightSelectedPoint)
+        self.pointsTable.installEventFilter(self)
+
         # Enable mouse tracking
         self.annotation_view.setMouseTracking(True)
         self.digitize_view.setMouseTracking(True)
         
         self.annotation_view.viewport().installEventFilter(self)
         self.digitize_view.viewport().installEventFilter(self)
+        
         self.initUI()
 
     def initUI(self):
@@ -185,14 +197,7 @@ class ImageViewer(QMainWindow):
 
         side_layout = QVBoxLayout()
 
-        # Table for digitized points
-        self.pointsTable = QTableWidget()
-        self.pointsTable.setColumnCount(2)
-        self.pointsTable.setHorizontalHeaderLabels(["X", "Y"])
-        self.pointsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.pointsTable.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.pointsTable.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.pointsTable.installEventFilter(self)
+        # Add pointsTable to the side layout
         side_layout.addWidget(self.pointsTable)
 
         side_widget = QWidget()
@@ -202,6 +207,7 @@ class ImageViewer(QMainWindow):
         layout.addWidget(side_widget, stretch=1)
 
         tab.setLayout(layout)
+        
         return tab
 
     def loadImage(self):
@@ -309,13 +315,21 @@ class ImageViewer(QMainWindow):
 
     def highlightDeletePointCandidate(self, point):
         threshold = 5.0  # Adjust the threshold as needed
-        for original_point, _, _ in self.digitized_points:
+        for original_point, x, y in self.digitized_points:
             if math.hypot(point.x() - original_point.x(), point.y() - original_point.y()) <= threshold:
-                self.delete_point_candidate = (original_point, _, _)
+                self.delete_point_candidate = (original_point, x, y)
                 self.updateView()
                 return
 
         self.delete_point_candidate = None
+        self.updateView()
+
+    def highlightSelectedPoint(self):
+        selected_row = self.pointsTable.currentRow()
+        if selected_row >= 0:
+            self.selected_point = self.digitized_points[selected_row]
+        else:
+            self.selected_point = None
         self.updateView()
 
     def calculateAndStoreArea(self, polygon_points):
@@ -532,7 +546,8 @@ class ImageViewer(QMainWindow):
 
             # Draw digitized points
             for original_point, x, y in self.digitized_points:
-                if self.delete_point_mode and self.delete_point_candidate == (original_point, x, y):
+                if (self.delete_point_mode and self.delete_point_candidate == (original_point, x, y)) or \
+                   (self.selected_point == (original_point, x, y)):
                     painter.setPen(QPen(Qt.yellow, 10, Qt.SolidLine))  # Highlight in yellow
                 else:
                     painter.setPen(QPen(Qt.blue, 10, Qt.SolidLine))
