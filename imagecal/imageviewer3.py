@@ -436,7 +436,8 @@ class ImageViewer(QMainWindow):
         distance, ok = QInputDialog.getDouble(self, "Input Scale", "Enter the distance between the two points:")
         if ok:
             pixel_distance = self.calculateDistance(self.calibration_points[0], self.calibration_points[1])
-            self.scale_factor = distance / pixel_distance
+            distance_in_meters = self.convertLengthUnits(distance, from_unit=self.current_length_unit, to_unit="meters")
+            self.scale_factor = distance_in_meters / pixel_distance
             self.updateMeasurements()
 
     def calculateDistance(self, point1, point2):
