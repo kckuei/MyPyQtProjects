@@ -1,9 +1,10 @@
 import sys
+import pandas as pd
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView,
                                QGraphicsPixmapItem, QVBoxLayout, QWidget, QPushButton,
                                QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-                               QHeaderView, QAbstractItemView, QComboBox, QLabel)
+                               QHeaderView, QAbstractItemView, QComboBox, QLabel, QGridLayout)
 from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QColor
 from PySide6.QtCore import Qt, QEvent, QPointF
 import math
@@ -38,6 +39,7 @@ class ImageViewer(QMainWindow):
         self.picking_axes_points = False
         self.current_axes_points = []
         self.selected_point = None
+        self.selected_points = []  # Initialize selected_points
 
         self.annotation_view = QGraphicsView()
         self.digitize_view = QGraphicsView()
@@ -60,8 +62,8 @@ class ImageViewer(QMainWindow):
         self.pointsTable.setHorizontalHeaderLabels(["X", "Y"])
         self.pointsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.pointsTable.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.pointsTable.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.pointsTable.itemSelectionChanged.connect(self.highlightSelectedPoint)
+        self.pointsTable.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.pointsTable.itemSelectionChanged.connect(self.highlightSelectedPoints)
         self.pointsTable.installEventFilter(self)
 
         # Enable mouse tracking
@@ -93,11 +95,10 @@ class ImageViewer(QMainWindow):
 
     def createAnnotationTab(self):
         tab = QWidget()
-        layout = QVBoxLayout()
+        layout = QHBoxLayout()
 
         # Control buttons layout
-        buttons_layout = QHBoxLayout()
-        layout.addLayout(buttons_layout)
+        buttons_layout = QVBoxLayout()
 
         # Load image button
         loadButton = QPushButton("Load Image", self)
@@ -135,23 +136,20 @@ class ImageViewer(QMainWindow):
         buttons_layout.addWidget(deleteButton)
 
         # Zoom in and zoom out buttons
+        zoomButtonsLayout = QHBoxLayout()
         zoomInButton = QPushButton("Zoom In", self)
         zoomInButton.clicked.connect(self.zoomIn)
-        buttons_layout.addWidget(zoomInButton)
+        zoomButtonsLayout.addWidget(zoomInButton)
 
         zoomOutButton = QPushButton("Zoom Out", self)
         zoomOutButton.clicked.connect(self.zoomOut)
-        buttons_layout.addWidget(zoomOutButton)
+        zoomButtonsLayout.addWidget(zoomOutButton)
+        buttons_layout.addLayout(zoomButtonsLayout)
 
-        # Zoom slider
-        self.zoomSlider = QSlider(Qt.Horizontal)
-        self.zoomSlider.setMinimum(1)
-        self.zoomSlider.setMaximum(200)
-        self.zoomSlider.setValue(100)
-        self.zoomSlider.setTickInterval(10)
-        self.zoomSlider.valueChanged.connect(self.zoomSliderChanged)
-        layout.addWidget(self.zoomSlider)
+        # Move buttons up
+        buttons_layout.addStretch(1)
 
+        layout.addLayout(buttons_layout)
         layout.addWidget(self.annotation_view)
 
         tab.setLayout(layout)
@@ -163,37 +161,47 @@ class ImageViewer(QMainWindow):
 
         # Control buttons layout
         controls_layout = QVBoxLayout()
-        buttons_layout = QHBoxLayout()
-        controls_layout.addLayout(buttons_layout)
+
+        # Add image button
+        addButton = QPushButton("Add Image", self)
+        addButton.clicked.connect(self.loadImage)
+        controls_layout.addWidget(addButton)
 
         # Draw axes button
         drawAxesButton = QPushButton("Draw Axes", self)
         drawAxesButton.clicked.connect(self.drawAxes)
-        buttons_layout.addWidget(drawAxesButton)
+        controls_layout.addWidget(drawAxesButton)
 
         # Digitize points button
         digitizePointsButton = QPushButton("Digitize Points", self)
         digitizePointsButton.clicked.connect(self.digitizePoints)
-        buttons_layout.addWidget(digitizePointsButton)
+        controls_layout.addWidget(digitizePointsButton)
 
         # Delete digitized points button
         deletePointsButton = QPushButton("Delete Points", self)
         deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
-        buttons_layout.addWidget(deletePointsButton)
+        controls_layout.addWidget(deletePointsButton)
 
         # Zoom in and zoom out buttons
+        zoomButtonsLayout = QHBoxLayout()
         zoomInButton = QPushButton("Zoom In", self)
         zoomInButton.clicked.connect(self.zoomIn)
-        buttons_layout.addWidget(zoomInButton)
+        zoomButtonsLayout.addWidget(zoomInButton)
 
         zoomOutButton = QPushButton("Zoom Out", self)
         zoomOutButton.clicked.connect(self.zoomOut)
-        buttons_layout.addWidget(zoomOutButton)
+        zoomButtonsLayout.addWidget(zoomOutButton)
+        controls_layout.addLayout(zoomButtonsLayout)
 
         # Toggle text labels button
         toggleTextLabelsButton = QPushButton("Toggle Text Labels", self)
         toggleTextLabelsButton.clicked.connect(self.toggleTextLabels)
-        buttons_layout.addWidget(toggleTextLabelsButton)
+        controls_layout.addWidget(toggleTextLabelsButton)
+
+        # Save points to CSV button
+        savePointsButton = QPushButton("Save Points", self)
+        savePointsButton.clicked.connect(self.savePoints)
+        controls_layout.addWidget(savePointsButton)
 
         # Input fields for axes values
         formLayout = QFormLayout()
@@ -238,6 +246,9 @@ class ImageViewer(QMainWindow):
         colorLayout.addRow("Label Color:", self.labelColorDropdown)
 
         controls_layout.addLayout(colorLayout)
+
+        # Move buttons up
+        controls_layout.addStretch(1)
 
         layout.addLayout(controls_layout, stretch=1)
 
@@ -303,6 +314,8 @@ class ImageViewer(QMainWindow):
         elif isinstance(source, QTableWidget) and event.type() == QEvent.KeyPress:
             if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
                 self.handleDeletePointFromTable()
+            elif event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+                self.copyPointsToClipboard()
         return super().eventFilter(source, event)
 
     def pointInImage(self, point):
@@ -354,12 +367,11 @@ class ImageViewer(QMainWindow):
             self.updateView()
 
     def handleDeletePointFromTable(self):
-        selected_row = self.pointsTable.currentRow()
-        if selected_row >= 0:
-            point_to_delete = self.digitized_points[selected_row]
-            self.digitized_points.remove(point_to_delete)
-            self.updatePointsTable()
-            self.updateView()
+        selected_rows = sorted(set(item.row() for item in self.pointsTable.selectedItems()))
+        for row in reversed(selected_rows):
+            del self.digitized_points[row]
+        self.updatePointsTable()
+        self.updateView()
 
     def highlightDeletePointCandidate(self, point):
         threshold = 5.0  # Adjust the threshold as needed
@@ -372,12 +384,9 @@ class ImageViewer(QMainWindow):
         self.delete_point_candidate = None
         self.updateView()
 
-    def highlightSelectedPoint(self):
-        selected_row = self.pointsTable.currentRow()
-        if selected_row >= 0:
-            self.selected_point = self.digitized_points[selected_row]
-        else:
-            self.selected_point = None
+    def highlightSelectedPoints(self):
+        selected_rows = sorted(set(item.row() for item in self.pointsTable.selectedItems()))
+        self.selected_points = [self.digitized_points[row] for row in selected_rows]
         self.updateView()
 
     def calculateAndStoreArea(self, polygon_points):
@@ -601,6 +610,8 @@ class ImageViewer(QMainWindow):
                 if (self.delete_point_mode and self.delete_point_candidate == (original_point, x, y)) or \
                    (self.selected_point == (original_point, x, y)):
                     painter.setPen(QPen(Qt.yellow, 10, Qt.SolidLine))  # Highlight in yellow
+                elif any(selected == (original_point, x, y) for selected in self.selected_points):
+                    painter.setPen(QPen(Qt.green, 10, Qt.SolidLine))  # Highlight selected points in green
                 else:
                     painter.setPen(QPen(self.point_color, 10, Qt.SolidLine))
                 painter.drawPoint(original_point)
@@ -740,6 +751,19 @@ class ImageViewer(QMainWindow):
         self.point_color = color_map[self.pointColorDropdown.currentText()]
         self.label_color = color_map[self.labelColorDropdown.currentText()]
         self.updateView()
+
+    def savePoints(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save Points", "", "CSV Files (*.csv)")
+        if path:
+            df = pd.DataFrame([(x, y) for _, x, y in self.digitized_points], columns=["X", "Y"])
+            df.to_csv(path, index=False)
+
+    def copyPointsToClipboard(self):
+        if not self.digitized_points:
+            return
+
+        df = pd.DataFrame([(x, y) for _, x, y in self.digitized_points], columns=["X", "Y"])
+        df.to_clipboard(index=False)
 
     def switchTab(self, index):
         self.updateView()
