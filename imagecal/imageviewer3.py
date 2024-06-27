@@ -79,6 +79,12 @@ class ImageViewer(QMainWindow):
         self.point_color = Qt.blue
         self.label_color = Qt.black
 
+        # Units
+        self.length_units = ["inches", "feet", "cm", "meters", "miles", "km"]
+        self.area_units = ["sq. inches", "sq. feet", "sq. cm", "sq. meters", "sq. miles", "sq. km", "acres"]
+        self.current_length_unit = "meters"
+        self.current_area_unit = "sq. meters"
+
         self.initUI()
 
     def initUI(self):
@@ -146,6 +152,19 @@ class ImageViewer(QMainWindow):
         zoomButtonsLayout.addWidget(zoomOutButton)
         buttons_layout.addLayout(zoomButtonsLayout)
 
+        # Unit selection dropdowns
+        lengthUnitDropdown = QComboBox()
+        lengthUnitDropdown.addItems(self.length_units)
+        lengthUnitDropdown.setCurrentText(self.current_length_unit)
+        lengthUnitDropdown.currentTextChanged.connect(self.updateLengthUnit)
+        buttons_layout.addWidget(lengthUnitDropdown)
+
+        areaUnitDropdown = QComboBox()
+        areaUnitDropdown.addItems(self.area_units)
+        areaUnitDropdown.setCurrentText(self.current_area_unit)
+        areaUnitDropdown.currentTextChanged.connect(self.updateAreaUnit)
+        buttons_layout.addWidget(areaUnitDropdown)
+
         # Move buttons up
         buttons_layout.addStretch(1)
 
@@ -181,6 +200,11 @@ class ImageViewer(QMainWindow):
         deletePointsButton = QPushButton("Delete Points", self)
         deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
         controls_layout.addWidget(deletePointsButton)
+
+        # Clear all points button
+        clearPointsButton = QPushButton("Clear All Points", self)
+        clearPointsButton.clicked.connect(self.clearAllPoints)
+        controls_layout.addWidget(clearPointsButton)
 
         # Zoom in and zoom out buttons
         zoomButtonsLayout = QHBoxLayout()
@@ -405,6 +429,7 @@ class ImageViewer(QMainWindow):
             area += p1.x() * p2.y() - p2.x() * p1.y()
         area = abs(area) / 2.0
         area *= (self.scale_factor ** 2)  # Convert to real world units
+        area = self.convertAreaUnits(area, from_unit="sq. meters", to_unit=self.current_area_unit)
         return area
 
     def promptScaleInput(self):
@@ -421,6 +446,7 @@ class ImageViewer(QMainWindow):
         for i, (p1, p2, _) in enumerate(self.measurements):
             pixel_distance = self.calculateDistance(p1, p2)
             real_distance = pixel_distance * self.scale_factor
+            real_distance = self.convertLengthUnits(real_distance, from_unit="meters", to_unit=self.current_length_unit)
             self.measurements[i] = (p1, p2, real_distance)
 
         for i, (polygon, _) in enumerate(self.areas):
@@ -437,6 +463,7 @@ class ImageViewer(QMainWindow):
         p2 = self.measurement_points[-1]
         pixel_distance = self.calculateDistance(p1, p2)
         real_distance = pixel_distance * self.scale_factor
+        real_distance = self.convertLengthUnits(real_distance, from_unit="meters", to_unit=self.current_length_unit)
         self.measurements.append((p1, p2, real_distance))
         self.updateView()
 
@@ -484,6 +511,11 @@ class ImageViewer(QMainWindow):
     def deleteDigitizedPoints(self):
         self.delete_point_mode = not self.delete_point_mode
         self.delete_point_candidate = None  # Reset the delete point candidate 
+        self.updateView()
+
+    def clearAllPoints(self):
+        self.digitized_points.clear()
+        self.updatePointsTable()
         self.updateView()
 
     def toggleTextLabels(self):
@@ -564,7 +596,7 @@ class ImageViewer(QMainWindow):
                     mid_point = (p1 + p2) / 2
                     painter.setFont(QFont("Arial", 14))
                     painter.setPen(QPen(Qt.red))
-                    painter.drawText(mid_point, f"{distance:.2f}")
+                    painter.drawText(mid_point, f"{distance:.2f} {self.current_length_unit}")
 
                 # Redraw areas
                 for polygon, area in self.areas:
@@ -576,7 +608,7 @@ class ImageViewer(QMainWindow):
                     mid_point = polygon.boundingRect().center()
                     painter.setFont(QFont("Arial", 14))
                     painter.setPen(QPen(Qt.red))
-                    painter.drawText(mid_point, f"{area:.2f}")
+                    painter.drawText(mid_point, f"{area:.2f} {self.current_area_unit}")
 
                 # Draw current polygon in progress
                 if self.measure_area_mode and len(self.current_polygon) > 0:
@@ -767,6 +799,39 @@ class ImageViewer(QMainWindow):
 
     def switchTab(self, index):
         self.updateView()
+
+    def updateLengthUnit(self, unit):
+        self.current_length_unit = unit
+        self.updateMeasurements()
+
+    def updateAreaUnit(self, unit):
+        self.current_area_unit = unit
+        self.updateMeasurements()
+
+    def convertLengthUnits(self, value, from_unit, to_unit):
+        conversion_factors = {
+            "meters": 1.0,
+            "inches": 39.3701,
+            "feet": 3.28084,
+            "cm": 100.0,
+            "miles": 0.000621371,
+            "km": 0.001
+        }
+        value_in_meters = value / conversion_factors[from_unit]
+        return value_in_meters * conversion_factors[to_unit]
+
+    def convertAreaUnits(self, value, from_unit, to_unit):
+        conversion_factors = {
+            "sq. meters": 1.0,
+            "sq. inches": 1550.0031,
+            "sq. feet": 10.7639,
+            "sq. cm": 10000.0,
+            "sq. miles": 3.861e-7,
+            "sq. km": 1e-6,
+            "acres": 0.000247105
+        }
+        value_in_sq_meters = value / conversion_factors[from_unit]
+        return value_in_sq_meters * conversion_factors[to_unit]
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
