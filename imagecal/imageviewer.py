@@ -85,14 +85,17 @@ class ImageViewer(QMainWindow):
         self.current_length_unit = "meters"
         self.current_area_unit = "sq. meters"
 
-        self.point_size = 5  # Default point size
-        self.line_width = 2  # Default line width
-        self.text_label_size = 14  # Default text label size
+        # Initialize size attributes
+        self.point_size = 10
+        self.line_width = 2
+        self.text_size = 14
+
+        self.orthographic_mode = False  # Initialize orthographic mode
 
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle("Image Drawer")
+        self.setWindowTitle("Image Annotater and Digitizing Tool v1.0")
         self.setGeometry(100, 100, 1000, 700)
 
         # Create tabs
@@ -156,6 +159,12 @@ class ImageViewer(QMainWindow):
         zoomButtonsLayout.addWidget(zoomOutButton)
         buttons_layout.addLayout(zoomButtonsLayout)
 
+        # Orthographic mode button
+        orthoButton = QPushButton("Orthographic Mode", self)
+        orthoButton.setCheckable(True)
+        orthoButton.clicked.connect(lambda checked: self.toggleOrthographicMode(checked))
+        buttons_layout.addWidget(orthoButton)
+
         # Unit selection dropdowns
         lengthUnitDropdown = QComboBox()
         lengthUnitDropdown.addItems(self.length_units)
@@ -169,31 +178,34 @@ class ImageViewer(QMainWindow):
         areaUnitDropdown.currentTextChanged.connect(self.updateAreaUnit)
         buttons_layout.addWidget(areaUnitDropdown)
 
-        # Sliders for point size, line width, and text label size
+        # Scrollbars for point size, line width, and text label size
         pointSizeSlider = QSlider(Qt.Horizontal)
-        pointSizeSlider.setMinimum(1)
-        pointSizeSlider.setMaximum(20)
+        pointSizeSlider.setRange(1, 20)
         pointSizeSlider.setValue(self.point_size)
+        pointSizeSlider.setFixedWidth(200)
+        pointSizeSlider.setTickPosition(QSlider.TicksBelow)
+        pointSizeSlider.setTickInterval(1)
         pointSizeSlider.valueChanged.connect(self.updatePointSize)
-        pointSizeSlider.setFixedWidth(150)
         buttons_layout.addWidget(QLabel("Point Size"))
         buttons_layout.addWidget(pointSizeSlider)
-
+        
         lineWidthSlider = QSlider(Qt.Horizontal)
-        lineWidthSlider.setMinimum(1)
-        lineWidthSlider.setMaximum(10)
+        lineWidthSlider.setRange(1, 20)
         lineWidthSlider.setValue(self.line_width)
+        lineWidthSlider.setFixedWidth(200)
+        lineWidthSlider.setTickPosition(QSlider.TicksBelow)
+        lineWidthSlider.setTickInterval(1)
         lineWidthSlider.valueChanged.connect(self.updateLineWidth)
-        lineWidthSlider.setFixedWidth(150)
         buttons_layout.addWidget(QLabel("Line Width"))
         buttons_layout.addWidget(lineWidthSlider)
 
         textSizeSlider = QSlider(Qt.Horizontal)
-        textSizeSlider.setMinimum(10)
-        textSizeSlider.setMaximum(30)
-        textSizeSlider.setValue(self.text_label_size)
+        textSizeSlider.setRange(1, 41)
+        textSizeSlider.setValue(self.text_size)
+        textSizeSlider.setFixedWidth(200)
+        textSizeSlider.setTickPosition(QSlider.TicksBelow)
+        textSizeSlider.setTickInterval(2)
         textSizeSlider.valueChanged.connect(self.updateTextSize)
-        textSizeSlider.setFixedWidth(150)
         buttons_layout.addWidget(QLabel("Text Label Size"))
         buttons_layout.addWidget(textSizeSlider)
 
@@ -303,31 +315,34 @@ class ImageViewer(QMainWindow):
 
         controls_layout.addLayout(colorLayout)
 
-        # Sliders for point size, line width, and text label size
+        # Scrollbars for point size, line width, and text label size
         pointSizeSlider = QSlider(Qt.Horizontal)
-        pointSizeSlider.setMinimum(1)
-        pointSizeSlider.setMaximum(20)
+        pointSizeSlider.setRange(1, 20)
         pointSizeSlider.setValue(self.point_size)
+        pointSizeSlider.setFixedWidth(200)
+        pointSizeSlider.setTickPosition(QSlider.TicksBelow)
+        pointSizeSlider.setTickInterval(1)
         pointSizeSlider.valueChanged.connect(self.updatePointSize)
-        pointSizeSlider.setFixedWidth(150)
         controls_layout.addWidget(QLabel("Point Size"))
         controls_layout.addWidget(pointSizeSlider)
 
         lineWidthSlider = QSlider(Qt.Horizontal)
-        lineWidthSlider.setMinimum(1)
-        lineWidthSlider.setMaximum(10)
+        lineWidthSlider.setRange(1, 20)
         lineWidthSlider.setValue(self.line_width)
+        lineWidthSlider.setFixedWidth(200)
+        lineWidthSlider.setTickPosition(QSlider.TicksBelow)
+        lineWidthSlider.setTickInterval(1)
         lineWidthSlider.valueChanged.connect(self.updateLineWidth)
-        lineWidthSlider.setFixedWidth(150)
         controls_layout.addWidget(QLabel("Line Width"))
         controls_layout.addWidget(lineWidthSlider)
 
         textSizeSlider = QSlider(Qt.Horizontal)
-        textSizeSlider.setMinimum(10)
-        textSizeSlider.setMaximum(30)
-        textSizeSlider.setValue(self.text_label_size)
+        textSizeSlider.setRange(1, 41)
+        textSizeSlider.setValue(self.text_size)
+        textSizeSlider.setFixedWidth(200)
+        textSizeSlider.setTickPosition(QSlider.TicksBelow)
+        textSizeSlider.setTickInterval(2)
         textSizeSlider.valueChanged.connect(self.updateTextSize)
-        textSizeSlider.setFixedWidth(150)
         controls_layout.addWidget(QLabel("Text Label Size"))
         controls_layout.addWidget(textSizeSlider)
 
@@ -412,12 +427,21 @@ class ImageViewer(QMainWindow):
             if len(self.calibration_points) == 2:
                 self.promptScaleInput()
         else:  # Measurement points
+
+            # If orthographic mode is on and we are about to draw the second point then modify the point projection
+            # Note: Currently, the projection occurs in DrawMeasurementLine. It would be clearer to move the logic here for both marking the point and drawing the line.
+            if self.orthographic_mode and len(self.measurement_points) % 2 == 1:
+                p1 = self.measurement_points[-1]
+                point = self.getOrthographicProjection(p1, point)
+
             self.measurement_points.append(point)
             self.markPoint(point)
             if len(self.measurement_points) % 2 == 0:
                 self.drawMeasurementLine()
 
     def handlePolygonPoint(self, point):
+        if self.orthographic_mode and len(self.current_polygon) > 0:
+            point = self.getOrthographicProjection(self.current_polygon[-1], point)
         if len(self.current_polygon) > 0 and self.calculateDistance(point, self.current_polygon[0]) < 10:
             # Close the polygon if the point is close to the first point
             self.calculateAndStoreArea(self.current_polygon)
@@ -434,6 +458,8 @@ class ImageViewer(QMainWindow):
         self.updateView()
 
     def handleAxesPoint(self, point):
+        if self.orthographic_mode and len(self.current_axes_points) > 0:
+            point = self.getOrthographicProjection(self.current_axes_points[-1], point)
         self.current_axes_points.append(point)
         self.markPoint(point)
         if len(self.current_axes_points) == 2:
@@ -493,11 +519,11 @@ class ImageViewer(QMainWindow):
         return area
 
     def promptScaleInput(self):
-        distance, ok = QInputDialog.getDouble(self, "Input Scale", f"Enter the distance between the two points ({self.current_length_unit}):")
+        distance, ok = QInputDialog.getDouble(self, "Input Scale", f"Enter the distance between the two points in {self.current_length_unit}:")
         if ok:
             pixel_distance = self.calculateDistance(self.calibration_points[0], self.calibration_points[1])
-            real_distance = self.convertLengthUnits(distance, from_unit=self.current_length_unit, to_unit="meters")
-            self.scale_factor = real_distance / pixel_distance
+            distance_in_meters = self.convertLengthUnits(distance, from_unit=self.current_length_unit, to_unit="meters")
+            self.scale_factor = distance_in_meters / pixel_distance
             self.updateMeasurements()
 
     def calculateDistance(self, point1, point2):
@@ -522,6 +548,8 @@ class ImageViewer(QMainWindow):
     def drawMeasurementLine(self):
         p1 = self.measurement_points[-2]
         p2 = self.measurement_points[-1]
+        if self.orthographic_mode:
+            p2 = self.getOrthographicProjection(p1, p2)
         pixel_distance = self.calculateDistance(p1, p2)
         real_distance = pixel_distance * self.scale_factor
         real_distance = self.convertLengthUnits(real_distance, from_unit="meters", to_unit=self.current_length_unit)
@@ -638,9 +666,9 @@ class ImageViewer(QMainWindow):
             painter = QPainter(temp_image)
             if self.annotations_visible:
                 # Redraw calibration points
-                painter.setPen(QPen(Qt.green, 3, Qt.SolidLine))
+                painter.setPen(QPen(Qt.green, self.point_size, Qt.SolidLine))
                 for point in self.calibration_points:
-                    painter.drawEllipse(point, 5, 5)  # Draw circles for calibration points
+                    painter.drawEllipse(point, self.point_size / 2, self.point_size / 2)  # Draw circles for calibration points
 
                 # Redraw measurement points
                 painter.setPen(QPen(Qt.red, self.point_size, Qt.SolidLine))
@@ -655,7 +683,7 @@ class ImageViewer(QMainWindow):
                         painter.setPen(QPen(Qt.blue, self.line_width, Qt.SolidLine))
                     painter.drawLine(p1, p2)
                     mid_point = (p1 + p2) / 2
-                    painter.setFont(QFont("Arial", self.text_label_size))
+                    painter.setFont(QFont("Arial", self.text_size))
                     painter.setPen(QPen(Qt.red))
                     painter.drawText(mid_point, f"{distance:.2f} {self.current_length_unit}")
 
@@ -667,7 +695,7 @@ class ImageViewer(QMainWindow):
                         painter.setPen(QPen(Qt.magenta, self.line_width, Qt.SolidLine))
                     painter.drawPolygon(polygon)
                     mid_point = polygon.boundingRect().center()
-                    painter.setFont(QFont("Arial", self.text_label_size))
+                    painter.setFont(QFont("Arial", self.text_size))
                     painter.setPen(QPen(Qt.red))
                     painter.drawText(mid_point, f"{area:.2f} {self.current_area_unit}")
 
@@ -687,14 +715,14 @@ class ImageViewer(QMainWindow):
                 painter.setPen(QPen(self.axis_color, self.line_width, Qt.SolidLine))
                 painter.drawLine(self.x_axis[0], self.x_axis[1])
                 self.drawArrow(painter, self.x_axis[0], self.x_axis[1])
-                painter.setFont(QFont("Arial", self.text_label_size))
+                painter.setFont(QFont("Arial", self.text_size))
                 painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.x_axis[1], f"X: {self.xmin} to {self.xmax}")
             if self.y_axis:
                 painter.setPen(QPen(self.axis_color, self.line_width, Qt.SolidLine))
                 painter.drawLine(self.y_axis[0], self.y_axis[1])
                 self.drawArrow(painter, self.y_axis[0], self.y_axis[1])
-                painter.setFont(QFont("Arial", self.text_label_size))
+                painter.setFont(QFont("Arial", self.text_size))
                 painter.setPen(QPen(self.axis_text_color))
                 painter.drawText(self.y_axis[1], f"Y: {self.ymin} to {self.ymax}")
 
@@ -709,7 +737,7 @@ class ImageViewer(QMainWindow):
                     painter.setPen(QPen(self.point_color, self.point_size, Qt.SolidLine))
                 painter.drawPoint(original_point)
                 if self.text_labels_visible:
-                    painter.setFont(QFont("Arial", self.text_label_size))
+                    painter.setFont(QFont("Arial", self.text_size))
                     painter.setPen(QPen(self.label_color))
                     painter.drawText(original_point, f"({x:.2f}, {y:.2f})")
 
@@ -864,8 +892,8 @@ class ImageViewer(QMainWindow):
             self.delete_point_mode = False
             self.picking_axes_points = False
         else:
-            self.delete_mode = False
             self.measure_area_mode = False
+            self.delete_mode = False
         self.updateView()
 
     def updateLengthUnit(self, unit):
@@ -875,18 +903,6 @@ class ImageViewer(QMainWindow):
     def updateAreaUnit(self, unit):
         self.current_area_unit = unit
         self.updateMeasurements()
-
-    def updatePointSize(self, value):
-        self.point_size = value
-        self.updateView()
-
-    def updateLineWidth(self, value):
-        self.line_width = value
-        self.updateView()
-
-    def updateTextSize(self, value):
-        self.text_label_size = value
-        self.updateView()
 
     def convertLengthUnits(self, value, from_unit, to_unit):
         conversion_factors = {
@@ -912,6 +928,30 @@ class ImageViewer(QMainWindow):
         }
         value_in_sq_meters = value / conversion_factors[from_unit]
         return value_in_sq_meters * conversion_factors[to_unit]
+
+    def updatePointSize(self, value):
+        self.point_size = value
+        self.updateView()
+
+    def updateLineWidth(self, value):
+        self.line_width = value
+        self.updateView()
+
+    def updateTextSize(self, value):
+        self.text_size = value
+        self.updateView()
+
+    def toggleOrthographicMode(self, checked):
+        self.orthographic_mode = checked
+        self.updateView()
+
+    def getOrthographicProjection(self, last_point, current_point):
+        dx = current_point.x() - last_point.x()
+        dy = current_point.y() - last_point.y()
+        if abs(dx) > abs(dy):
+            return QPointF(current_point.x(), last_point.y())
+        else:
+            return QPointF(last_point.x(), current_point.y())
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
