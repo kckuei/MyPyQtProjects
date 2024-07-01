@@ -19,7 +19,7 @@ Dependencies
 
 ## Project 1: Simple Annotation and Digitization Tool
 
-Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imageviewer.py) from a user-specified image. This is a knockoff/discount version of two of my favorite/most-used tools at work, Revu BlueBeam, and WebPlotDigitizer. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
+Tool for [annotating dimensions and digitizing points](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/imagecal.py) from a user-specified image. This is a knockoff/discount version of two of my favorite/most-used tools at work, Revu BlueBeam, and WebPlotDigitizer. In annotation mode, the user can calibrate the scale, measure dimensions, areas, delete or toggle them on/off. In digitization mode, the user specifies an x- and y-axis, digitize points, or delete them.
 
 Other Implementation Ideas:
 * Bezier Curves Digitizer/Interpolator Tool
