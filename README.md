@@ -36,6 +36,8 @@ Dependencies
 
 ## Project 2: CPT/SPT Data Processing & Site Characterization Tool
 
+Incorporate 3D plotting for [unit lithology/voxelization](https://github.com/kckuei/lithology/tree/main?tab=readme-ov-file).
+
 ## Other Notes
 
 ### Compiling Executables
