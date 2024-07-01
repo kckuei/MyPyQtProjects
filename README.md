@@ -31,7 +31,7 @@ Dependencies
 * `numpy 1.26.4` for numerical operations
 * `pandas 2.2.2` for data handling
 
-![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/peek_demo.gif?raw=true)
+![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/peek_demo2.gif?raw=true)
 
 
 ## Project 2: CPT/SPT Data Processing & Site Characterization Tool
