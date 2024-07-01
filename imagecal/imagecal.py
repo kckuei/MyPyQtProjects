@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraph
                                QHBoxLayout, QFileDialog, QInputDialog, QSlider, QTabWidget,
                                QFormLayout, QLineEdit, QTableWidget, QTableWidgetItem,
                                QHeaderView, QAbstractItemView, QComboBox, QLabel, QGridLayout)
-from PySide6.QtGui import QPixmap, QPainter, QPen, QImage, QFont, QPolygonF, QColor
+from PySide6.QtGui import QPixmap, QPainter, QPen, QBrush, QImage, QFont, QPolygonF, QColor
 from PySide6.QtCore import Qt, QEvent, QPointF
 import math
 
@@ -428,8 +428,7 @@ class ImageViewer(QMainWindow):
                 self.promptScaleInput()
         else:  # Measurement points
 
-            # If orthographic mode is on and we are about to draw the second point then modify the point projection
-            # Note: Currently, the projection occurs in DrawMeasurementLine. It would be clearer to move the logic here for both marking the point and drawing the line.
+            # Project the second point if orthographic mode
             if self.orthographic_mode and len(self.measurement_points) % 2 == 1:
                 p1 = self.measurement_points[-1]
                 point = self.getOrthographicProjection(p1, point)
@@ -439,14 +438,18 @@ class ImageViewer(QMainWindow):
             if len(self.measurement_points) % 2 == 0:
                 self.drawMeasurementLine()
 
-    def handlePolygonPoint(self, point):
+    # Handles appending polygon points and closing of polygons
+    def handlePolygonPoint(self, point): 
         if self.orthographic_mode and len(self.current_polygon) > 0:
+            # Project current pioint if orthographic mode on
             point = self.getOrthographicProjection(self.current_polygon[-1], point)
+        
         if len(self.current_polygon) > 0 and self.calculateDistance(point, self.current_polygon[0]) < 10:
             # Close the polygon if the point is close to the first point
             self.calculateAndStoreArea(self.current_polygon)
             self.current_polygon = []
         else:
+            # Append point
             self.current_polygon.append(point)
             self.markPoint(point)
 
@@ -548,8 +551,6 @@ class ImageViewer(QMainWindow):
     def drawMeasurementLine(self):
         p1 = self.measurement_points[-2]
         p2 = self.measurement_points[-1]
-        if self.orthographic_mode:
-            p2 = self.getOrthographicProjection(p1, p2)
         pixel_distance = self.calculateDistance(p1, p2)
         real_distance = pixel_distance * self.scale_factor
         real_distance = self.convertLengthUnits(real_distance, from_unit="meters", to_unit=self.current_length_unit)
@@ -663,12 +664,19 @@ class ImageViewer(QMainWindow):
         temp_image = self.clean_image.copy()  # Start with a clean copy of the original image
 
         if self.tabs.currentIndex() == 0:
+            # ANNOTAITON TAB
+
             painter = QPainter(temp_image)
             if self.annotations_visible:
                 # Redraw calibration points
-                painter.setPen(QPen(Qt.green, self.point_size, Qt.SolidLine))
                 for point in self.calibration_points:
+                    painter.setPen(QPen(Qt.black, self.point_size / 4))  # Set black pen for the outline
+                    painter.setBrush(QBrush(Qt.green, Qt.SolidPattern))  # Set green brush for fill
                     painter.drawEllipse(point, self.point_size / 2, self.point_size / 2)  # Draw circles for calibration points
+
+                if len(self.calibration_points) > 1:
+                    painter.setPen(QPen(Qt.green, self.line_width, Qt.DotLine))
+                    painter.drawLine(self.calibration_points[-2], self.calibration_points[-1])
 
                 # Redraw measurement points
                 painter.setPen(QPen(Qt.red, self.point_size, Qt.SolidLine))
@@ -689,26 +697,50 @@ class ImageViewer(QMainWindow):
 
                 # Redraw areas
                 for polygon, area in self.areas:
+                    # Draws the area and text
                     if self.delete_mode and polygon == self.delete_candidate:
                         painter.setPen(QPen(Qt.yellow, self.line_width, Qt.SolidLine))  # Highlight in yellow
                     else:
                         painter.setPen(QPen(Qt.magenta, self.line_width, Qt.SolidLine))
+                    painter.setBrush(Qt.NoBrush)  # No fill
                     painter.drawPolygon(polygon)
                     mid_point = polygon.boundingRect().center()
                     painter.setFont(QFont("Arial", self.text_size))
                     painter.setPen(QPen(Qt.red))
                     painter.drawText(mid_point, f"{area:.2f} {self.current_area_unit}")
 
+                    # Redraw points at the vertices of the polygon
+                    painter.setBrush(QBrush(Qt.red))  # Set brush for the points
+                    for point in polygon:
+                        painter.drawEllipse(point, self.point_size / 2, self.point_size / 2)  # Draw circles for vertices
+
                 # Draw current polygon in progress
                 if self.measure_area_mode and len(self.current_polygon) > 0:
                     painter.setPen(QPen(Qt.cyan, self.line_width, Qt.SolidLine))
                     for i in range(len(self.current_polygon) - 1):
                         painter.drawLine(self.current_polygon[i], self.current_polygon[i + 1])
-                    painter.drawLine(self.current_polygon[-1], self.lastPoint)
+                        painter.drawPoint(point)
+
+                    if self.orthographic_mode:
+                        if len(self.current_polygon) > 1:
+                            point = self.getOrthographicProjection(self.current_polygon[-2], self.current_polygon[-1])
+                            painter.drawLine(self.current_polygon[-2], point)
+                    else:
+                        painter.drawLine(self.current_polygon[-1], self.lastPoint)
+
+                    # Redraw points at the vertices of the polygon
+                    painter.setBrush(QBrush(Qt.red))  # Set brush for the points
+                    for point in self.current_polygon:
+                        painter.drawEllipse(point, self.point_size / 2, self.point_size / 2)  # Draw circles for vertices
+
+
+
 
             self.annotation_pixmapItem.setPixmap(QPixmap.fromImage(temp_image))
 
         elif self.tabs.currentIndex() == 1:
+            # DIGITIZATION TAB
+
             painter = QPainter(temp_image)
             # Draw x and y axes
             if self.x_axis:
