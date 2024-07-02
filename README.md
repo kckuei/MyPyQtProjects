@@ -26,6 +26,9 @@ Other Ideas:
 
 ![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/peek_demo2.gif?raw=true)
 
+![Dam Example](https://github.com/kckuei/MyPyQtProjects/blob/main/imagecal/assets/demo.png?raw=true)
+
+
 ## Project 3: CPT/SPT Data Processing & Site Characterization Tool
 
 Incorporate 3D plotting for [unit lithology/voxelization](https://github.com/kckuei/lithology/tree/main?tab=readme-ov-file).
