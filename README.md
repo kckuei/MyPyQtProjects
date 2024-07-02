@@ -6,8 +6,6 @@ Miscellaneous small PyQt projects.
 
 Tool for [fitting and interpolating data](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/interpolator.py) using linear interpolation, regression, smoothing splines, or step interpolation. User inputs the x-y data, visualizes it, applies different fitting/interpolation methods, then generates the resampled data. Users can copy data directly, export to a CSV file, and highlight selected portions of the data in the plot.
 
-![Smoothing spline](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/example-1-spline.png?raw=true)
-
 ![Demo](https://github.com/kckuei/MyPyQtProjects/blob/main/interpolator/assets/peek_demo.gif?raw=true)
 
 Dependencies

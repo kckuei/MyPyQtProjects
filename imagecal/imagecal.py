@@ -124,14 +124,16 @@ class ImageViewer(QMainWindow):
         buttons_layout.addWidget(calibrateButton)
 
         # Measure distance button
-        measureButton = QPushButton("Measure Distance", self)
-        measureButton.clicked.connect(self.measureDistance)
-        buttons_layout.addWidget(measureButton)
+        self.measureButton = QPushButton("Measure Distance", self)
+        self.measureButton.setCheckable(True)
+        self.measureButton.clicked.connect(self.measureDistance)
+        buttons_layout.addWidget(self.measureButton)
 
         # Measure area button
-        areaButton = QPushButton("Measure Area", self)
-        areaButton.clicked.connect(self.measureArea)
-        buttons_layout.addWidget(areaButton)
+        self.areaButton = QPushButton("Measure Area", self)
+        self.areaButton.setCheckable(True)
+        self.areaButton.clicked.connect(self.measureArea)
+        buttons_layout.addWidget(self.areaButton)
 
         # Clear annotations button
         clearButton = QPushButton("Clear Annotations", self)
@@ -140,13 +142,15 @@ class ImageViewer(QMainWindow):
 
         # Toggle visibility button
         toggleButton = QPushButton("Toggle Annotations", self)
+        toggleButton.setCheckable(True)
         toggleButton.clicked.connect(self.toggleAnnotations)
         buttons_layout.addWidget(toggleButton)
 
         # Delete specific annotation button
-        deleteButton = QPushButton("Delete Annotation", self)
-        deleteButton.clicked.connect(self.deleteAnnotation)
-        buttons_layout.addWidget(deleteButton)
+        self.deleteButton = QPushButton("Delete Annotation", self)
+        self.deleteButton.setCheckable(True)
+        self.deleteButton.clicked.connect(self.deleteAnnotation)
+        buttons_layout.addWidget(self.deleteButton)
 
         # Zoom in and zoom out buttons
         zoomButtonsLayout = QHBoxLayout()
@@ -231,19 +235,22 @@ class ImageViewer(QMainWindow):
         controls_layout.addWidget(addButton)
 
         # Draw axes button
-        drawAxesButton = QPushButton("Draw Axes", self)
-        drawAxesButton.clicked.connect(self.drawAxes)
-        controls_layout.addWidget(drawAxesButton)
+        self.drawAxesButton = QPushButton("Draw Axes", self)
+        self.drawAxesButton.setCheckable(True)
+        self.drawAxesButton.clicked.connect(self.drawAxes)
+        controls_layout.addWidget(self.drawAxesButton)
 
         # Digitize points button
-        digitizePointsButton = QPushButton("Digitize Points", self)
-        digitizePointsButton.clicked.connect(self.digitizePoints)
-        controls_layout.addWidget(digitizePointsButton)
+        self.digitizePointsButton = QPushButton("Digitize Points", self)
+        self.digitizePointsButton.setCheckable(True)
+        self.digitizePointsButton.clicked.connect(self.digitizePoints)
+        controls_layout.addWidget(self.digitizePointsButton)
 
         # Delete digitized points button
-        deletePointsButton = QPushButton("Delete Points", self)
-        deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
-        controls_layout.addWidget(deletePointsButton)
+        self.deletePointsButton = QPushButton("Delete Points", self)
+        self.deletePointsButton.setCheckable(True)
+        self.deletePointsButton.clicked.connect(self.deleteDigitizedPoints)
+        controls_layout.addWidget(self.deletePointsButton)
 
         # Clear all points button
         clearPointsButton = QPushButton("Clear All Points", self)
@@ -263,7 +270,8 @@ class ImageViewer(QMainWindow):
 
         # Toggle text labels button
         toggleTextLabelsButton = QPushButton("Toggle Text Labels", self)
-        toggleTextLabelsButton.clicked.connect(self.toggleTextLabels)
+        toggleTextLabelsButton.setCheckable(True)
+        toggleTextLabelsButton.clicked.connect(lambda checked: self.toggleTextLabels(checked))
         controls_layout.addWidget(toggleTextLabelsButton)
 
         # Save points to CSV button
@@ -421,13 +429,16 @@ class ImageViewer(QMainWindow):
         return self.clean_image and (0 <= point.x() < self.image.width()) and (0 <= point.y() < self.image.height())
 
     def handleMousePress(self, point):
-        if len(self.calibration_points) < 2:  # Calibration points
+        
+        if len(self.calibration_points) < 2: 
+         # Calibration points
             self.calibration_points.append(point)
             self.markPoint(point)
             if len(self.calibration_points) == 2:
-                self.promptScaleInput()
-        else:  # Measurement points
-
+                self.promptScaleInput()        
+                self.measureButton.setChecked(True)
+        else: 
+        # Measurement points
             # Project the second point if orthographic mode
             if self.orthographic_mode and len(self.measurement_points) % 2 == 1:
                 p1 = self.measurement_points[-1]
@@ -470,6 +481,9 @@ class ImageViewer(QMainWindow):
         elif len(self.current_axes_points) == 4:
             self.y_axis = self.current_axes_points[2:]
             self.picking_axes_points = False
+            self.digitize_mode = True
+            self.drawAxesButton.setChecked(self.picking_axes_points)
+            self.digitizePointsButton.setChecked(self.digitize_mode)
         self.updateView()
 
     def handleDeletePoint(self, point):
@@ -569,12 +583,18 @@ class ImageViewer(QMainWindow):
         if len(self.calibration_points) < 2:
             # Ensure we only keep calibration points if calibration is not completed
             self.measurement_points.clear()
+        self.measureButton.setChecked(True)
+        self.areaButton.setChecked(False)
+        self.deleteButton.setChecked(False)
         self.updateView()
 
     def measureArea(self):
         self.delete_mode = False
         self.measure_area_mode = not self.measure_area_mode
         self.current_polygon = []
+        self.areaButton.setChecked(self.measure_area_mode)
+        self.measureButton.setChecked(False)
+        self.deleteButton.setChecked(False)
         self.updateView()
 
     def clearAnnotations(self):
@@ -596,20 +616,29 @@ class ImageViewer(QMainWindow):
         self.digitize_mode = False
         self.picking_axes_points = False
         self.delete_candidate = None  # Reset the delete candidate 
+        self.deleteButton.setChecked(self.delete_mode)
+        self.measureButton.setChecked(False)
+        self.areaButton.setChecked(False)
         self.updateView()
 
     def deleteDigitizedPoints(self):
         self.delete_point_mode = not self.delete_point_mode
-        self.delete_point_candidate = None  # Reset the delete point candidate 
+        self.delete_point_candidate = None  # Reset the delete point candidate
+        self.deletePointsButton.setChecked(self.delete_point_mode)
+        self.digitizePointsButton.setChecked(False)
         self.updateView()
 
     def clearAllPoints(self):
         self.digitized_points.clear()
+        self.delete_point_mode = False
+        self.digitize_mode = True
+        self.digitizePointsButton.setChecked(self.digitize_mode)
+        self.deletePointsButton.setChecked(self.delete_point_mode)
         self.updatePointsTable()
         self.updateView()
 
-    def toggleTextLabels(self):
-        self.text_labels_visible = not self.text_labels_visible
+    def toggleTextLabels(self, checked):
+        self.text_labels_visible = not checked
         self.updateView()
 
     def handleDeleteAnnotation(self, point):
@@ -823,6 +852,8 @@ class ImageViewer(QMainWindow):
         self.digitize_mode = not self.digitize_mode
         self.delete_mode = False
         self.delete_point_mode = False
+        self.digitizePointsButton.setChecked(self.digitize_mode)
+        self.deletePointsButton.setChecked(False)
         self.updateView()
 
     def convertToCoordinates(self, point):
